@@ -21,7 +21,7 @@ pub const MODBUS_PORT: u16 = 502;
 /// The Modbus facts lifted out of a Modbus/TCP packet — the fields
 /// detection actually reasons about. (Full register values are process
 /// data; a security monitor mostly needs *who commanded what, how*.)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModbusInfo {
     /// Modbus unit/slave id the command addresses.
     pub unit_id: u8,
@@ -45,6 +45,16 @@ pub struct ModbusInfo {
     pub quantity: Option<u16>,
     /// Value for single writes (function codes 5 and 6).
     pub value: Option<u16>,
+    /// MBAP transaction identifier. A read response carries the
+    /// transaction id of its request — the only link between a
+    /// response and the address range it answers (responses do not
+    /// repeat the address). Behavior recording pairs them with it.
+    pub transaction_id: u16,
+    /// Values decoded from a read response (functions 1–4):
+    /// registers as themselves, coils/discrete inputs as 0/1, in
+    /// address order starting at the paired request's start
+    /// address. Empty for requests, writes, and exceptions.
+    pub values: Vec<u16>,
 }
 
 impl ModbusInfo {
@@ -233,6 +243,8 @@ fn parse_modbus(src_port: Option<u16>, dst_port: Option<u16>, adu: &[u8]) -> Opt
         address: None,
         quantity: None,
         value: None,
+        transaction_id: u16be(adu, 0),
+        values: Vec::new(),
     };
     if !is_response && adu.len() >= 12 {
         // Request PDUs for every function Deadband decodes carry the
@@ -242,6 +254,30 @@ fn parse_modbus(src_port: Option<u16>, dst_port: Option<u16>, adu: &[u8]) -> Opt
             1 | 2 | 3 | 4 | 15 | 16 => info.quantity = Some(u16be(adu, 10)),
             5 | 6 => info.value = Some(u16be(adu, 10)),
             _ => {}
+        }
+    }
+    if is_response && !is_exception && (1..=4).contains(&function_code) && adu.len() >= 9 {
+        // Read response PDU: function, byte count, then the data —
+        // register pairs for 3/4, packed bits (LSB first) for 1/2.
+        // Decode only what is actually present; a lying byte count
+        // just yields fewer values.
+        let byte_count = adu[8] as usize;
+        let end = (9 + byte_count).min(adu.len());
+        let data = &adu[9..end];
+        match function_code {
+            3 | 4 => {
+                info.values = data.chunks_exact(2).map(|pair| u16be(pair, 0)).collect();
+            }
+            _ => {
+                let mut values = Vec::with_capacity(data.len() * 8);
+                for byte in data {
+                    for bit in 0..8 {
+                        values.push(u16::from((byte >> bit) & 1));
+                    }
+                }
+                values.truncate(2000);
+                info.values = values;
+            }
         }
     }
     Some(info)

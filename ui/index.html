@@ -46,7 +46,7 @@
     <img id="splash-logo" src="./assets/deadband-logo.jpg" alt="Deadband"
          onerror="var s=document.getElementById('splash'); if(s) s.remove();">
     <p class="splash-sub">Real-time passive OT network monitor</p>
-    <p class="splash-version" id="splash-version">Deadband v0.1.11</p>
+    <p class="splash-version" id="splash-version">Deadband v0.1.12</p>
   </div>
   <div class="shell">
     <nmui-navigation rail expanded id="rail">
@@ -500,7 +500,7 @@
         </nmui-card>
       </section>
 
-      <footer class="note">Deadband v0.1.11 · UI: nmui v0.43.7, vendored and pinned (ui/vendor/nmui) · Themes selectable in Settings</footer>
+      <footer class="note">Deadband v0.1.12 · UI: nmui v0.43.7, vendored and pinned (ui/vendor/nmui) · Themes selectable in Settings</footer>
     </main>
   </div>
 
@@ -2048,10 +2048,34 @@
         esc((c.src_ip === ip ? '→ ' + c.dst_ip : '← ' + c.src_ip) + ':' + c.dst_port +
         ' (' + c.protocol + ', ' + c.packet_count + ' pkts)')).join(' · ') + '</p>';
     }
+    body += '<div class="detail-profile" data-profile-for="' + esc(ip) + '"><p class="dim">Behavior profile: checking the recording…</p></div>';
     body += detailItemsHtml(await recentFor((e) => e.src_ip === ip || e.dst_ip === ip));
     body += '<button class="chip-btn" data-log-device="' + esc(JSON.stringify([ip])) +
       '" data-log-label="' + esc(d.label || ip) + '">View in Events log →</button>';
     showDetail('Device — ' + (d.label || ip), body);
+    fillDeviceProfile(ip);
+  }
+
+  // Behavior recording: what this device actually answers — the
+  // values it returns, its function mix, its polling rhythm. This
+  // is the twin's feedstock, shown so it can be eyeballed.
+  async function fillDeviceProfile(ip) {
+    let profile = null;
+    try { profile = await invoke('device_profile', { ip }); } catch (err) {}
+    document.querySelectorAll('.detail-profile').forEach((el) => {
+      if (el.getAttribute('data-profile-for') !== ip) return;
+      if (!profile) {
+        el.innerHTML = '<p class="dim">Behavior profile: nothing recorded yet — a profile builds from this device\'s own Modbus answers as they are observed.</p>';
+        return;
+      }
+      const regs = profile.registers.map((r) =>
+        'addr ' + r.address + ': ' + (r.min === r.max ? String(r.last) : r.min + '–' + r.max + ', last ' + r.last)).join(' · ');
+      const mix = profile.function_mix.map((f) => f.name + ' ×' + f.count).join(' · ');
+      el.innerHTML = '<p class="dim">Behavior profile — ' + profile.responses + ' answers recorded' +
+        (profile.mean_poll_ms != null ? ', polled about every ' + profile.mean_poll_ms + ' ms' : '') +
+        (mix ? '<br>Answers: ' + esc(mix) : '') +
+        (regs ? '<br>Registers seen: ' + esc(regs) : '') + '</p>';
+    });
   }
 
   async function showConduit(a, b) {

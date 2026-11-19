@@ -45,6 +45,7 @@ pub mod parse;
 pub mod pcap;
 pub mod query;
 pub mod placement;
+pub mod profile;
 pub mod sample;
 pub mod scenarios;
 pub mod sim;

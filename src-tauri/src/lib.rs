@@ -787,6 +787,95 @@ fn maintenance_status(app: tauri::AppHandle, state: tauri::State<AppState>) -> M
     maintenance_status_of(&state)
 }
 
+// ---- behavior profiles (feature program) --------------------------
+
+/// Wire shape for one register's recorded range.
+#[derive(Debug, Serialize)]
+struct RegisterStatDto {
+    function: u8,
+    address: u16,
+    min: u16,
+    max: u16,
+    last: u16,
+    samples: u64,
+}
+
+/// Wire shape for one entry in a profile's function mix.
+#[derive(Debug, Serialize)]
+struct FunctionMixDto {
+    name: String,
+    count: u64,
+}
+
+/// One device's behavior profile for the detail views.
+#[derive(Debug, Serialize)]
+struct ProfileDto {
+    ip: String,
+    responses: u64,
+    polls: u64,
+    mean_poll_ms: Option<i64>,
+    clients: Vec<String>,
+    function_mix: Vec<FunctionMixDto>,
+    registers: Vec<RegisterStatDto>,
+    first_seen_s: i64,
+    last_seen_s: i64,
+}
+
+/// Plain name for a Modbus function code, for profile display.
+fn modbus_function_name(function: u8) -> String {
+    match function {
+        1 => "read coils".to_string(),
+        2 => "read discrete inputs".to_string(),
+        3 => "read holding registers".to_string(),
+        4 => "read input registers".to_string(),
+        5 => "write single coil".to_string(),
+        6 => "write single register".to_string(),
+        15 => "write multiple coils".to_string(),
+        16 => "write multiple registers".to_string(),
+        other => format!("function {other}"),
+    }
+}
+
+/// The behavior profile recorded for one device, if any. The
+/// detail views show it; the twin will drink from it later.
+#[tauri::command]
+fn device_profile(state: tauri::State<AppState>, ip: String) -> Option<ProfileDto> {
+    let addr: std::net::IpAddr = ip.parse().ok()?;
+    let store = state.store.lock().ok()?;
+    let profile = store.device_profile(addr)?;
+    let mut registers: Vec<RegisterStatDto> = profile
+        .registers
+        .iter()
+        .map(|((function, address), stat)| RegisterStatDto {
+            function: *function,
+            address: *address,
+            min: stat.min,
+            max: stat.max,
+            last: stat.last,
+            samples: stat.samples,
+        })
+        .collect();
+    registers.sort_by(|a, b| b.samples.cmp(&a.samples).then(a.address.cmp(&b.address)));
+    registers.truncate(24);
+    let mut function_mix: Vec<FunctionMixDto> = profile
+        .function_mix
+        .iter()
+        .map(|(function, count)| FunctionMixDto { name: modbus_function_name(*function), count: *count })
+        .collect();
+    function_mix.sort_by(|a, b| b.count.cmp(&a.count));
+    Some(ProfileDto {
+        ip: profile.ip.to_string(),
+        responses: profile.responses,
+        polls: profile.polls,
+        mean_poll_ms: profile.mean_poll_interval_ms(),
+        clients: profile.clients.iter().map(|client| client.to_string()).collect(),
+        function_mix,
+        registers,
+        first_seen_s: profile.first_seen_s,
+        last_seen_s: profile.last_seen_s,
+    })
+}
+
 // ---- canary PLC (feature program, item 3) ---------------------------
 // A fake controller that nothing legitimate ever talks to. Any touch
 // is an intruder by definition — no baseline, no false positives.
@@ -1561,7 +1650,8 @@ pub fn run() {
             canary_status,
             start_maintenance,
             stop_maintenance,
-            maintenance_status
+            maintenance_status,
+            device_profile
         ])
         .run(tauri::generate_context!())
         .expect("error while running Deadband");

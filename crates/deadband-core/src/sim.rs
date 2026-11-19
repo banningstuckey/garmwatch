@@ -505,7 +505,7 @@ mod tests {
             total += 1;
             if parsed.protocol == Protocol::ModbusTcp {
                 modbus += 1;
-                if parsed.modbus.map(|m| m.is_write).unwrap_or(false) {
+                if parsed.modbus.as_ref().map(|m| m.is_write).unwrap_or(false) {
                     writes += 1;
                     // In normal operation only the HMI writes.
                     assert_eq!(parsed.src_ip, Some(IpAddr::V4(Ipv4Addr::from(HMI.ip))));

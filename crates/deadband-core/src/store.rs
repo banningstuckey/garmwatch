@@ -13,8 +13,12 @@
 //!   read from.
 
 use crate::model::{Device, DeviceRole, Event, EventKind, PurdueLevel};
+use crate::profile::{mix_from_str, mix_to_string, DeviceProfile, ProfileRecorder, RegisterStat};
 use rusqlite::{params, Connection};
+use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::fmt;
+use std::net::IpAddr;
 use std::path::Path;
 
 /// Storage failures (open / schema / query).
@@ -41,20 +45,39 @@ pub type Result<T> = std::result::Result<T, StoreError>;
 /// The engine's SQLite store.
 pub struct Store {
     conn: Connection,
+    /// Behavior profiles (feature program): aggregated in memory by
+    /// the recorder, flushed to the profile tables in batches —
+    /// a response per poll must not mean a write per poll.
+    profiles: RefCell<ProfileRecorder>,
+    /// Devices whose profiles changed since the last flush.
+    profile_dirty: RefCell<HashSet<IpAddr>>,
+    /// Observations since open (drives the flush cadence).
+    profile_ops: Cell<u64>,
 }
 
 impl Store {
     /// Opens (creating if needed) the database at `path` and ensures
     /// the schema exists.
     pub fn open(path: impl AsRef<Path>) -> Result<Store> {
-        let store = Store { conn: Connection::open(path)? };
+        let store = Store {
+            conn: Connection::open(path)?,
+            profiles: RefCell::new(ProfileRecorder::new()),
+            profile_dirty: RefCell::new(HashSet::new()),
+            profile_ops: Cell::new(0),
+        };
         store.init_schema()?;
+        store.load_profiles()?;
         Ok(store)
     }
 
     /// Opens a throwaway in-memory database (tests, lab demos).
     pub fn open_in_memory() -> Result<Store> {
-        let store = Store { conn: Connection::open_in_memory()? };
+        let store = Store {
+            conn: Connection::open_in_memory()?,
+            profiles: RefCell::new(ProfileRecorder::new()),
+            profile_dirty: RefCell::new(HashSet::new()),
+            profile_ops: Cell::new(0),
+        };
         store.init_schema()?;
         Ok(store)
     }
@@ -99,6 +122,30 @@ impl Store {
 
             CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events (timestamp);
             CREATE INDEX IF NOT EXISTS idx_connections_pair ON connections (src_ip, dst_ip);
+
+            CREATE TABLE IF NOT EXISTS profile_devices (
+                ip              TEXT PRIMARY KEY,
+                responses       INTEGER NOT NULL DEFAULT 0,
+                polls           INTEGER NOT NULL DEFAULT 0,
+                interval_sum_ms INTEGER NOT NULL DEFAULT 0,
+                interval_count  INTEGER NOT NULL DEFAULT 0,
+                first_seen_s    INTEGER NOT NULL DEFAULT 0,
+                last_seen_s     INTEGER NOT NULL DEFAULT 0,
+                last_request_ms INTEGER,
+                function_mix    TEXT NOT NULL DEFAULT '',
+                clients         TEXT NOT NULL DEFAULT ''
+            );
+
+            CREATE TABLE IF NOT EXISTS profile_registers (
+                ip       TEXT NOT NULL,
+                function INTEGER NOT NULL,
+                address  INTEGER NOT NULL,
+                min_v    INTEGER NOT NULL,
+                max_v    INTEGER NOT NULL,
+                last_v   INTEGER NOT NULL,
+                samples  INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (ip, function, address)
+            );
             ",
         )?;
         Ok(())
@@ -177,8 +224,174 @@ impl Store {
     /// Settings "start over" path. Baselines rebuild from scratch.
     pub fn clear_all(&self) -> Result<()> {
         self.conn.execute_batch(
-            "DELETE FROM events; DELETE FROM connections; DELETE FROM devices;",
+            "DELETE FROM events; DELETE FROM connections; DELETE FROM devices;
+             DELETE FROM profile_devices; DELETE FROM profile_registers;",
         )?;
+        self.profiles.borrow_mut().clear();
+        self.profile_dirty.borrow_mut().clear();
+        Ok(())
+    }
+
+    // ---- behavior profiles (feature program) ---------------------
+
+    /// Feeds one parsed packet to the behavior recorder. Called for
+    /// every packet the pipeline processes; the recorder ignores
+    /// anything that is not Modbus. Flushes changed profiles to
+    /// SQLite every 32 observations.
+    pub fn record_packet_profile(&self, parsed: &crate::parse::ParsedPacket) {
+        let changed = self.profiles.borrow_mut().observe(parsed);
+        if let Some(ip) = changed {
+            self.profile_dirty.borrow_mut().insert(ip);
+            let ops = self.profile_ops.get() + 1;
+            self.profile_ops.set(ops);
+            if ops % 32 == 0 {
+                let _ = self.flush_profiles();
+            }
+        }
+    }
+
+    /// One device's behavior profile, if anything has been recorded.
+    pub fn device_profile(&self, ip: IpAddr) -> Option<DeviceProfile> {
+        self.profiles.borrow().profile(ip).cloned()
+    }
+
+    /// How many devices have behavior profiles.
+    pub fn profile_device_count(&self) -> usize {
+        self.profiles.borrow().profiles().len()
+    }
+
+    /// Persists every profile changed since the last flush. Rows
+    /// are rewritten per device (bounded: at most
+    /// MAX_REGISTERS_PER_DEVICE register rows), so this stays cheap.
+    pub fn flush_profiles(&self) -> Result<()> {
+        let dirty: Vec<IpAddr> = self.profile_dirty.borrow_mut().drain().collect();
+        let recorder = self.profiles.borrow();
+        for ip in dirty {
+            let Some(profile) = recorder.profile(ip) else { continue };
+            let clients = profile
+                .clients
+                .iter()
+                .map(|client| client.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            self.conn.execute(
+                "INSERT INTO profile_devices (ip, responses, polls, interval_sum_ms, interval_count,
+                                              first_seen_s, last_seen_s, last_request_ms, function_mix, clients)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                 ON CONFLICT(ip) DO UPDATE SET responses = excluded.responses, polls = excluded.polls,
+                     interval_sum_ms = excluded.interval_sum_ms, interval_count = excluded.interval_count,
+                     first_seen_s = excluded.first_seen_s, last_seen_s = excluded.last_seen_s,
+                     last_request_ms = excluded.last_request_ms, function_mix = excluded.function_mix,
+                     clients = excluded.clients",
+                params![
+                    ip.to_string(),
+                    profile.responses as i64,
+                    profile.polls as i64,
+                    profile.interval_sum_ms,
+                    profile.interval_count as i64,
+                    profile.first_seen_s,
+                    profile.last_seen_s,
+                    profile.last_request_ms,
+                    mix_to_string(&profile.function_mix),
+                    clients,
+                ],
+            )?;
+            self.conn.execute("DELETE FROM profile_registers WHERE ip = ?1", params![ip.to_string()])?;
+            for ((function, address), stat) in &profile.registers {
+                self.conn.execute(
+                    "INSERT INTO profile_registers (ip, function, address, min_v, max_v, last_v, samples)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![
+                        ip.to_string(),
+                        i64::from(*function),
+                        i64::from(*address),
+                        i64::from(stat.min),
+                        i64::from(stat.max),
+                        i64::from(stat.last),
+                        stat.samples as i64,
+                    ],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Hydrates the recorder from the profile tables (at open).
+    fn load_profiles(&self) -> Result<()> {
+        let mut stmt = self.conn.prepare(
+            "SELECT ip, responses, polls, interval_sum_ms, interval_count, first_seen_s,
+                    last_seen_s, last_request_ms, function_mix, clients
+             FROM profile_devices",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, i64>(6)?,
+                row.get::<_, Option<i64>>(7)?,
+                row.get::<_, String>(8)?,
+                row.get::<_, String>(9)?,
+            ))
+        })?;
+        let mut loaded: Vec<DeviceProfile> = Vec::new();
+        for row in rows {
+            let (ip, responses, polls, sum, count, first, last, last_req, mix, clients) = row?;
+            let Ok(ip) = ip.parse::<IpAddr>() else { continue };
+            let mut profile = DeviceProfile::new(ip);
+            profile.responses = responses as u64;
+            profile.polls = polls as u64;
+            profile.interval_sum_ms = sum;
+            profile.interval_count = count as u64;
+            profile.first_seen_s = first;
+            profile.last_seen_s = last;
+            profile.last_request_ms = last_req;
+            profile.function_mix = mix_from_str(&mix);
+            profile.clients = clients
+                .split(',')
+                .filter_map(|text| text.parse::<IpAddr>().ok())
+                .collect();
+            loaded.push(profile);
+        }
+        drop(stmt);
+        let mut stmt = self.conn.prepare(
+            "SELECT ip, function, address, min_v, max_v, last_v, samples FROM profile_registers",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, i64>(6)?,
+            ))
+        })?;
+        let mut registers: Vec<(String, (u8, u16), RegisterStat)> = Vec::new();
+        for row in rows {
+            let (ip, function, address, min, max, last, samples) = row?;
+            registers.push((
+                ip,
+                (function as u8, address as u16),
+                RegisterStat { min: min as u16, max: max as u16, last: last as u16, samples: samples as u64 },
+            ));
+        }
+        drop(stmt);
+        let mut recorder = self.profiles.borrow_mut();
+        for (ip_text, key, stat) in registers {
+            if let Ok(ip) = ip_text.parse::<IpAddr>() {
+                if let Some(profile) = loaded.iter_mut().find(|profile| profile.ip == ip) {
+                    profile.registers.insert(key, stat);
+                }
+            }
+        }
+        for profile in loaded {
+            recorder.insert_loaded(profile);
+        }
         Ok(())
     }
 
@@ -470,6 +683,42 @@ mod tests {
         assert_eq!(devices[0].level, Some(PurdueLevel::Control));
         assert_eq!(devices[0].role, DeviceRole::Plc);
         assert_eq!(devices[0].label.as_deref(), Some("Main PLC"));
+    }
+
+    #[test]
+    fn profiles_persist_across_reopen() {
+        // The twin's feedstock must survive restarts: record one
+        // poll round trip, flush, reopen, and the profile — values
+        // included — is still there.
+        let dir = std::env::temp_dir().join(format!("deadband-profile-test-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("test.db");
+        let _ = std::fs::remove_file(&path);
+        {
+            let store = Store::open(&path).unwrap();
+            let request = crate::sim::build_modbus_read(
+                "02:db:00:00:02:0a", "02:db:00:00:01:0b",
+                [10, 0, 2, 10], [10, 0, 1, 11], 40000, 1, 3, 100, 4, 7,
+            );
+            let response = crate::sim::build_modbus_read_response(
+                "02:db:00:00:01:0b", "02:db:00:00:02:0a",
+                [10, 0, 1, 11], [10, 0, 2, 10], 40000, 1, 3, &[10, 20, 30, 40], 7,
+            );
+            for (ts, frame) in [(1_700_000_000_000, request), (1_700_000_000_040, response)] {
+                let packet = crate::source::Packet { timestamp_ms: ts, data: frame };
+                let parsed = crate::parse::parse_packet(&packet).unwrap();
+                store.record_packet_profile(&parsed);
+            }
+            store.flush_profiles().unwrap();
+        }
+        let store = Store::open(&path).unwrap();
+        let profile = store
+            .device_profile("10.0.1.11".parse::<IpAddr>().unwrap())
+            .expect("profile survived reopen");
+        assert_eq!(profile.responses, 1);
+        assert_eq!(profile.polls, 1);
+        assert_eq!(profile.registers.get(&(3, 102)).map(|stat| stat.last), Some(30));
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

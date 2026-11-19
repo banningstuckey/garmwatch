@@ -22,6 +22,9 @@ pub fn process_packet(store: &Store, packet: &Packet) -> Vec<Event> {
         Ok(parsed) => parsed,
         Err(_) => return Vec::new(),
     };
+    // Behavior recording (feature program): every Modbus answer
+    // feeds the responding device's profile — the twin's feedstock.
+    store.record_packet_profile(&parsed);
     let timestamp_s = parsed.timestamp_ms / 1000;
     let mut events = Vec::new();
 
@@ -48,7 +51,7 @@ pub fn process_packet(store: &Store, packet: &Packet) -> Vec<Event> {
     // Connection accounting. Modbus responses are folded back into the
     // client's conversation (client → server), so a poll and its reply
     // are one connection, not two.
-    let is_response = parsed.modbus.map(|mb| mb.is_response).unwrap_or(false);
+    let is_response = parsed.modbus.as_ref().map(|mb| mb.is_response).unwrap_or(false);
     let (client, server, server_port) = if is_response {
         (dst_ip, src_ip, parsed.src_port.unwrap_or(0))
     } else {
@@ -177,7 +180,7 @@ fn packet_event(
 ) -> Event {
     let src = name_of(store, src_ip);
     let dst = name_of(store, dst_ip);
-    let (kind, summary) = match parsed.modbus {
+    let (kind, summary) = match &parsed.modbus {
         Some(mb) if mb.is_response => (
             EventKind::PacketObserved,
             format!(

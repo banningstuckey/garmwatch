@@ -33,6 +33,11 @@ existing rules treat them that way:
 - **Restart rule:** a cold or warm restart from anyone is an
   alert (Critical from an unauthorized sender, High even from the
   master — restarts belong in maintenance windows).
+- **Broadcast-control rule:** a control command addressed to
+  0xFFFF — every outstation at once, with no responses — is
+  Critical from anyone, the legitimate master included.
+  Indiscriminate is indiscriminate. (A broadcast *read* is fine
+  and does not alert.)
 - **Bad-checksum rule:** a frame that parses but fails a CRC is
   kept, flagged, and alerted on once per source. Corruption and
   hand-crafted frames (fuzzing) are signals, not silence.

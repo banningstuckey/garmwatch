@@ -521,3 +521,42 @@ mod tests {
     }
 }
 
+
+#[cfg(test)]
+mod broadcast_tests {
+    use super::*;
+    use crate::model::EventKind;
+    use crate::sim;
+    use crate::source::Packet;
+    use crate::store::Store;
+
+    #[test]
+    fn a_broadcast_control_command_raises_its_rule() {
+        let store = Store::open_in_memory().unwrap();
+        for device in sim::roster() {
+            store.add_device(&device).unwrap();
+        }
+        let mut rules = crate::detect::RulesLayer::default();
+        let mut anomaly = crate::detect::AnomalyLayer::default();
+        // Even from the legitimate master: broadcast control is
+        // indiscriminate, and the rule is sender-agnostic.
+        let crob = [12, 1, 0x17, 1, 0, 0x06, 1, 10, 0, 0];
+        let frame = sim::build_dnp3_broadcast(sim::SCADA_MASTER, sim::RTU1, 0x05, &crob, 88);
+        let packet = Packet { timestamp_ms: 1_700_000_000_000, data: frame };
+        let events = process_packet_full(&store, &packet, &mut rules, &mut anomaly, false);
+        assert!(
+            events.iter().any(|e| e.kind == EventKind::AlertRaised && e.summary.contains("[dnp3-broadcast-control]")),
+            "alerts: {:?}",
+            events.iter().map(|e| &e.summary).collect::<Vec<_>>()
+        );
+        // And a broadcast READ is not control — no rule.
+        let frame = sim::build_dnp3_broadcast(sim::SCADA_MASTER, sim::RTU1, 0x01, &[60, 1, 0x06], 89);
+        let packet = Packet { timestamp_ms: 1_700_000_001_000, data: frame };
+        let events = process_packet_full(&store, &packet, &mut rules, &mut anomaly, false);
+        assert!(
+            !events.iter().any(|e| e.kind == EventKind::AlertRaised),
+            "a broadcast read must not alert: {:?}",
+            events.iter().map(|e| &e.summary).collect::<Vec<_>>()
+        );
+    }
+}

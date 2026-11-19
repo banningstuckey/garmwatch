@@ -62,6 +62,7 @@ fn base_points(summary: &str) -> Option<i32> {
         ("[early-warning]", 25),
         ("[new-level-crossing]", 15),
         ("[new-device]", 8),
+        ("[dnp3-broadcast-control]", 40),
         ("[dnp3-restart]", 30),
         ("[dnp3-bad-crc]", 15),
     ] {

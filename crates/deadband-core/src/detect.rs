@@ -148,6 +148,7 @@ pub fn rule_catalog() -> Vec<RuleInfo> {
         RuleInfo { id: "write-outside-pattern", name: "Write outside the pattern", description: "A device writes to a controller it has never written to before (after baseline)." },
         RuleInfo { id: "dnp3-restart", name: "DNP3 restart command", description: "A cold or warm restart is sent to a DNP3 outstation — it knocks the device offline and clears its state." },
         RuleInfo { id: "dnp3-bad-crc", name: "DNP3 bad checksum", description: "A DNP3 frame fails its CRC — line noise, a dying device, or hand-crafted frames (fuzzing)." },
+        RuleInfo { id: "dnp3-broadcast-control", name: "DNP3 broadcast control", description: "A control command addressed to every outstation at once (0xFFFF) — indiscriminate and answerless by design." },
     ]
 }
 
@@ -453,6 +454,31 @@ impl RulesLayer {
                             .to_string(),
                         device_ip: Some(src),
                         factors: vec![("frame CRC mismatch".to_string(), 100)],
+                    },
+                    &mut out,
+                );
+            }
+            if dnp.broadcast && dnp.is_control && !dnp.is_response {
+                self.fire(
+                    format!("dnp3-broadcast-control:{src}"),
+                    Alert {
+                        timestamp: ts,
+                        layer: "rules",
+                        severity: Severity::Critical,
+                        title: format!(
+                            "[dnp3-broadcast-control] {} sent a {} to EVERY outstation at once",
+                            name(src),
+                            dnp.function_name()
+                        ),
+                        detail: "The command was addressed to the DNP3 broadcast address \
+                                 (0xFFFF): every outstation on the segment obeys it, and \
+                                 broadcast gets no responses — fire-and-forget, with no \
+                                 way to see who complied. Legitimate masters address \
+                                 commands to one outstation; broadcast control is an \
+                                 indiscriminate act, whoever sends it."
+                            .to_string(),
+                        device_ip: Some(src),
+                        factors: vec![("broadcast control command".to_string(), 100)],
                     },
                     &mut out,
                 );

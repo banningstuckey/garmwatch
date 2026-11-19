@@ -399,6 +399,31 @@ pub fn build_dnp3_operate(rtu: PlantDevice, seq: u32) -> Vec<u8> {
     build_dnp3(SCADA_MASTER, rtu, &dnp3_app(0x05, &objects, seq), seq)
 }
 
+/// A DNP3 request addressed to the broadcast address 0xFFFF —
+/// every outstation at once. The frame rides to `via`'s MAC/IP
+/// (a gateway or one segment member); the DNP3 address inside is
+/// what makes it broadcast, and broadcast gets no responses.
+pub fn build_dnp3_broadcast(
+    src: PlantDevice,
+    via: PlantDevice,
+    function: u8,
+    objects: &[u8],
+    seq: u32,
+) -> Vec<u8> {
+    let app = dnp3_app(function, objects, seq);
+    let mut link = vec![0x05, 0x64, (5 + app.len()) as u8, 0xC4];
+    link.extend_from_slice(&0xFFFFu16.to_le_bytes());
+    link.extend_from_slice(&dnp_addr(src.ip).to_le_bytes());
+    let header_crc = crate::parse::dnp3_crc(&link[2..8]);
+    link.extend_from_slice(&header_crc.to_le_bytes());
+    for block in app.chunks(16) {
+        link.extend_from_slice(block);
+        let block_crc = crate::parse::dnp3_crc(block);
+        link.extend_from_slice(&block_crc.to_le_bytes());
+    }
+    build_tcp_frame(src.mac, via.mac, src.ip, via.ip, DNP_MASTER_PORT, crate::parse::DNP3_PORT, &link, seq)
+}
+
 /// Any DNP3 request with a chosen function code — restarts and
 /// other rare commands the scenarios and tests need.
 pub fn build_dnp3_command(

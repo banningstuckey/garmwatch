@@ -52,7 +52,7 @@ pub struct Suspicion {
 /// Base points for an alert, by the rule tag in its summary —
 /// mirroring the severities in `detect.rs` (Critical 40, High 25–30,
 /// Medium 15, Low 8). `None` for summaries with no known tag.
-fn base_points(summary: &str) -> Option<i32> {
+pub fn base_points(summary: &str) -> Option<i32> {
     for (tag, points) in [
         ("[it-to-controller]", 40),
         ("[write-from-non-hmi]", 40),

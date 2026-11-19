@@ -40,6 +40,7 @@ pub mod canary;
 pub mod capture;
 pub mod detect;
 pub mod engine;
+pub mod evidence;
 pub mod model;
 pub mod parse;
 pub mod pcap;

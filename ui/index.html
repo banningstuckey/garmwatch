@@ -46,7 +46,7 @@
     <img id="splash-logo" src="./assets/deadband-logo.jpg" alt="Deadband"
          onerror="var s=document.getElementById('splash'); if(s) s.remove();">
     <p class="splash-sub">Real-time passive OT network monitor</p>
-    <p class="splash-version" id="splash-version">Deadband v0.2.2</p>
+    <p class="splash-version" id="splash-version">Deadband v0.2.3</p>
   </div>
   <div class="shell">
     <nmui-navigation rail expanded id="rail">
@@ -307,6 +307,22 @@
           <p class="dim">The day ranked by what needs your eyes: canary touches first, then whoever is held in quarantine, the highest suspicion scores, vouches, and windows. The list is computed from the log; the AI brief is optional and only narrates it.</p>
         </nmui-card>
 
+        <nmui-card class="panel" variant="outlined">
+          <div class="panel-title">Audit evidence</div>
+          <p class="dim">One click builds the printable report over the audit trail — every operator action with its attribution, every alert, who is held in quarantine, and every Ignore with what the actor did afterwards. The kind of packet an auditor (NERC CIP, IEC 62443) or an investigator asks for. Generating a report is itself recorded in the trail.</p>
+          <div class="row">
+            <select id="evidence-window" class="query-select" aria-label="Report window">
+              <option value="1">Last 24 hours</option>
+              <option value="7" selected>Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="0">All stored history</option>
+            </select>
+            <nmui-button id="btn-evidence-generate" variant="filled">Generate report</nmui-button>
+            <nmui-button id="btn-evidence-print" variant="outlined" hidden>Print / save PDF</nmui-button>
+          </div>
+          <div id="evidence-report"></div>
+        </nmui-card>
+
         <nmui-card outlined class="log-card">
           <h2 class="card-title">Live event log</h2>
           <div class="filter-row" id="log-filters">
@@ -521,7 +537,7 @@
         </nmui-card>
       </section>
 
-      <footer class="note">Deadband v0.2.2 · UI: nmui v0.43.7, vendored and pinned (ui/vendor/nmui) · Themes selectable in Settings</footer>
+      <footer class="note">Deadband v0.2.3 · UI: nmui v0.43.7, vendored and pinned (ui/vendor/nmui) · Themes selectable in Settings</footer>
     </main>
   </div>
 
@@ -1125,6 +1141,22 @@
     }
   }
   const triageNarrativeEl = document.getElementById('triage-narrative');
+  const evidenceReportEl = document.getElementById('evidence-report');
+  const evidencePrintBtn = document.getElementById('btn-evidence-print');
+  document.getElementById('btn-evidence-generate').addEventListener('click', async () => {
+    if (!invoke || !evidenceReportEl) return;
+    const days = Number(document.getElementById('evidence-window').value || 7);
+    evidenceReportEl.innerHTML = '<p class="dim">Building the report…</p>';
+    try {
+      evidenceReportEl.innerHTML = await invoke('audit_report', { days });
+      evidencePrintBtn.hidden = false;
+      loadBacklog();
+    } catch (err) {
+      evidenceReportEl.innerHTML = '<p class="dim">Could not build the report: ' + String(err) + '</p>';
+    }
+  });
+  evidencePrintBtn.addEventListener('click', () => window.print());
+
   document.getElementById('btn-triage-explain').addEventListener('click', async () => {
     if (!triageNarrativeEl) return;
     triageNarrativeEl.hidden = false;
@@ -1742,6 +1774,7 @@
     analystModel = v;
     try { localStorage.setItem('deadband.analystModel', v); } catch (err) {}
     setMenuField('set-model-field', v || 'First available');
+    if (invoke) invoke('record_ui_action', { action: 'analyst_model_changed' }).catch(() => {});
   });
 
   const aiStatusEl = document.getElementById('ai-status');
@@ -2821,6 +2854,7 @@
     analystModel = v;
     try { localStorage.setItem('deadband.analystModel', v); } catch (err) {}
     setMenuField('analyst-model-field', v || 'First available');
+    if (invoke) invoke('record_ui_action', { action: 'analyst_model_changed' }).catch(() => {});
   });
   if (invoke) {
     invoke('analyst_status').then((a) => {

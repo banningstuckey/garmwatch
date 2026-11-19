@@ -182,6 +182,7 @@ fn start_simulation(app: tauri::AppHandle, state: tauri::State<AppState>) -> Sim
     if state.running.swap(true, Ordering::Relaxed) {
         return status_of(&state);
     }
+    record_operator_event(&app, &state.store, format!("Simulation started by {}.", os_user()));
     let now_s = now_ms() / 1000;
     if let Ok(store) = state.store.lock() {
         for mut device in deadband_core::sim::roster() {
@@ -231,8 +232,10 @@ fn start_simulation(app: tauri::AppHandle, state: tauri::State<AppState>) -> Sim
 
 /// Stops the simulated plant. Stored events stay in the database.
 #[tauri::command]
-fn stop_simulation(state: tauri::State<AppState>) -> SimulationStatus {
-    state.running.store(false, Ordering::Relaxed);
+fn stop_simulation(app: tauri::AppHandle, state: tauri::State<AppState>) -> SimulationStatus {
+    if state.running.swap(false, Ordering::Relaxed) {
+        record_operator_event(&app, &state.store, format!("Simulation stopped by {}.", os_user()));
+    }
     status_of(&state)
 }
 
@@ -303,6 +306,11 @@ fn start_replay(
     if packets.is_empty() {
         return fail(&state, format!("{label}: no packets in capture"));
     }
+    record_operator_event(
+        &app,
+        &state.store,
+        format!("Replay started by {}: {label}.", os_user()),
+    );
     // One live feed at a time: replaying stops the simulated plant
     // and any live capture.
     state.running.store(false, Ordering::Relaxed);
@@ -376,8 +384,10 @@ fn start_replay(
 
 /// Stops the capture replay. Stored events stay in the database.
 #[tauri::command]
-fn stop_replay(state: tauri::State<AppState>) -> ReplayStatus {
-    state.replay_running.store(false, Ordering::Relaxed);
+fn stop_replay(app: tauri::AppHandle, state: tauri::State<AppState>) -> ReplayStatus {
+    if state.replay_running.swap(false, Ordering::Relaxed) {
+        record_operator_event(&app, &state.store, format!("Replay stopped by {}.", os_user()));
+    }
     replay_status_of(&state)
 }
 
@@ -500,14 +510,21 @@ fn start_capture(
             quiet_alerted: false,
         };
     }
+    record_operator_event(
+        &app,
+        &state.store,
+        format!("Live capture started by {} on interface {interface}.", os_user()),
+    );
     spawn_capture_thread(app, &state, interface);
     capture_status_of(&state)
 }
 
 /// Stops live capture. Stored events stay in the database.
 #[tauri::command]
-fn stop_capture(state: tauri::State<AppState>) -> CaptureStatus {
-    state.capture_running.store(false, Ordering::Relaxed);
+fn stop_capture(app: tauri::AppHandle, state: tauri::State<AppState>) -> CaptureStatus {
+    if state.capture_running.swap(false, Ordering::Relaxed) {
+        record_operator_event(&app, &state.store, format!("Live capture stopped by {}.", os_user()));
+    }
     capture_status_of(&state)
 }
 
@@ -1535,6 +1552,11 @@ fn start_canary(
             if let Ok(mut slot) = state.canary_server.lock() {
                 *slot = Some(server);
             }
+            record_operator_event(
+                &app,
+                &state.store,
+                format!("Canary PLC started by {} on {}:{}.", os_user(), config.bind, config.port),
+            );
         }
         Err(message) => {
             if let Ok(mut info) = state.canary_info.lock() {
@@ -1547,11 +1569,16 @@ fn start_canary(
 
 /// Stops the canary. Stored touch events stay in the database.
 #[tauri::command]
-fn stop_canary(state: tauri::State<AppState>) -> CanaryStatus {
+fn stop_canary(app: tauri::AppHandle, state: tauri::State<AppState>) -> CanaryStatus {
+    let mut stopped = false;
     if let Ok(mut slot) = state.canary_server.lock() {
         if let Some(server) = slot.take() {
             server.stop();
+            stopped = true;
         }
+    }
+    if stopped {
+        record_operator_event(&app, &state.store, format!("Canary PLC stopped by {}.", os_user()));
     }
     canary_status_of(&state)
 }
@@ -1625,6 +1652,11 @@ fn run_scenario(app: tauri::AppHandle, state: tauri::State<AppState>, name: Stri
     let Some(packets) = deadband_core::scenarios::packets(&name, now_ms()) else {
         return false;
     };
+    record_operator_event(
+        &app,
+        &state.store,
+        format!("Attack scenario '{name}' run by {} — drill traffic, not a real intrusion.", os_user()),
+    );
     let store = Arc::clone(&state.store);
     let anomaly_shared = Arc::clone(&state.anomaly_shared);
     let maint_handle = Arc::clone(&state.maintenance);
@@ -2093,15 +2125,43 @@ fn placement_suggestions(state: tauri::State<AppState>) -> Vec<PlacementDto> {
 /// Confirm a suggestion: re-infer fresh (behavior may have moved
 /// since the list was drawn) and write the placement back.
 #[tauri::command]
-fn apply_placement(state: tauri::State<AppState>, ip: String) -> Result<bool, String> {
+fn apply_placement(
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+    ip: String,
+) -> Result<bool, String> {
     let addr: std::net::IpAddr = ip.parse().map_err(|_| "bad IP address".to_string())?;
-    let store = state.store.lock().unwrap();
-    match deadband_core::placement::infer(&store, addr)
-        .map_err(|e| format!("inference failed: {e}"))?
-    {
-        Some(p) => store
-            .update_device_placement(addr, p.level, p.role)
-            .map_err(|e| format!("placement failed: {e}")),
+    let placed = {
+        let store = state.store.lock().unwrap();
+        match deadband_core::placement::infer(&store, addr)
+            .map_err(|e| format!("inference failed: {e}"))?
+        {
+            Some(p) => {
+                let applied = store
+                    .update_device_placement(addr, p.level, p.role)
+                    .map_err(|e| format!("placement failed: {e}"))?;
+                Some((p.level, p.role, applied))
+            }
+            None => None,
+        }
+    };
+    match placed {
+        Some((level, role, applied)) => {
+            if applied {
+                record_operator_event(
+                    &app,
+                    &state.store,
+                    format!(
+                        "Placement confirmed by {}: {} placed at Level {} as {}.",
+                        os_user(),
+                        addr,
+                        level.label(),
+                        role.as_tag()
+                    ),
+                );
+            }
+            Ok(applied)
+        }
         None => Ok(false),
     }
 }
@@ -2110,11 +2170,66 @@ fn apply_placement(state: tauri::State<AppState>, ip: String) -> Result<bool, St
 /// (devices, connections, events) so baselines rebuild from zero.
 /// The UI demands a two-click confirm before calling this.
 #[tauri::command]
-fn clear_data(state: tauri::State<AppState>) -> Result<bool, String> {
-    let store = state.store.lock().unwrap();
-    store.clear_all().map_err(|e| format!("clear failed: {e}"))?;
+fn clear_data(app: tauri::AppHandle, state: tauri::State<AppState>) -> Result<bool, String> {
+    {
+        let store = state.store.lock().unwrap();
+        store.clear_all().map_err(|e| format!("clear failed: {e}"))?;
+    }
     *state.anomaly_shared.lock().unwrap() = AnomalyStatusDto::default();
+    // The clear is itself audited, recorded AFTER the wipe: it is
+    // the first entry of the fresh trail and cannot erase itself.
+    record_operator_event(
+        &app,
+        &state.store,
+        format!(
+            "Stored data cleared by {}. This record is the first entry of the fresh trail — a clear cannot erase its own record.",
+            os_user()
+        ),
+    );
     Ok(true)
+}
+
+/// One-click audit evidence: the pull itself is recorded first
+/// (meta-audit — accessing the trail is part of the trail), then
+/// the report is built over the stored events, so the record of
+/// this generation is inside the report it produced.
+#[tauri::command]
+fn audit_report(app: tauri::AppHandle, state: tauri::State<AppState>, days: u32) -> Result<String, String> {
+    let days = days.min(3650);
+    let window_label = if days == 0 {
+        "all stored history".to_string()
+    } else {
+        format!("the last {days} day(s)")
+    };
+    record_operator_event(
+        &app,
+        &state.store,
+        format!("Audit evidence report generated by {} — window: {window_label}.", os_user()),
+    );
+    let now_s = now_ms() / 1000;
+    let from_s = if days == 0 { 0 } else { now_s - i64::from(days) * 86_400 };
+    let store = state.store.lock().map_err(|_| "store busy".to_string())?;
+    let events = store
+        .events_since(from_s, 100_000)
+        .map_err(|e| format!("could not read the trail: {e}"))?;
+    let quarantined = store.quarantined();
+    let report = deadband_core::evidence::build_report(&events, &quarantined, from_s, now_s);
+    Ok(deadband_core::evidence::render_html(&report, &os_user()))
+}
+
+/// Records a settings change the UI owns (its settings live in
+/// the webview). The action vocabulary is a fixed allowlist —
+/// the shell writes the summary, never the caller.
+#[tauri::command]
+fn record_ui_action(app: tauri::AppHandle, state: tauri::State<AppState>, action: String) -> bool {
+    let summary = match action.as_str() {
+        "analyst_model_changed" => {
+            format!("Preferred analyst model changed by {}.", os_user())
+        }
+        _ => return false,
+    };
+    record_operator_event(&app, &state.store, summary);
+    true
 }
 
 pub fn run() {
@@ -2182,6 +2297,8 @@ pub fn run() {
             release_actor,
             daily_triage,
             explain_triage,
+            audit_report,
+            record_ui_action,
             open_external,
             pull_model
         ])

@@ -399,6 +399,15 @@ footer.note { color: var(--md-sys-color-on-surface-variant); font-size: 12px; }
   white-space: nowrap;
 }
 .actor-actions { margin-top: 8px; }
+#btn-evidence-print[hidden] { display: none; }
+/* Audit evidence: on paper, only the report exists. */
+@media print {
+  body * { visibility: hidden; }
+  #evidence-report, #evidence-report * { visibility: visible; }
+  #evidence-report { position: absolute; inset: 0; background: #fff; }
+  /* Paper gets the report's own ink, whatever theme is on screen. */
+  #evidence-report .ev-doc, #evidence-report .ev-doc * { color: #111 !important; }
+}
 .triage-list { margin: 6px 0 6px 20px; padding: 0; }
 .triage-list li { margin: 5px 0; }
 .action-sheet {

@@ -190,7 +190,7 @@ mod tests {
     }
 
     #[test]
-    fn replaying_the_sample_discovers_six_unknown_devices() {
+    fn replaying_the_sample_discovers_nine_unknown_devices() {
         let store = Store::open_in_memory().unwrap();
         let mut laptop_writes = 0;
         for packet in sample_packets() {
@@ -203,7 +203,7 @@ mod tests {
             }
         }
         let devices = store.list_devices().unwrap();
-        assert_eq!(devices.len(), 6, "5 re-addressed plant devices + the laptop");
+        assert_eq!(devices.len(), 9, "8 re-addressed plant devices + the laptop");
         assert!(
             devices.iter().all(|d| d.level.is_none()),
             "nothing was registered in advance: every device is unplaced"

@@ -524,7 +524,7 @@ impl Store {
     pub fn write_pairs(&self) -> Result<Vec<(std::net::IpAddr, std::net::IpAddr)>> {
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT src_ip, dst_ip FROM events
-             WHERE kind = 'modbus_command' AND instr(summary, 'WRITE') > 0
+             WHERE kind IN ('modbus_command', 'dnp3_command') AND instr(summary, 'WRITE') > 0
                AND src_ip IS NOT NULL AND dst_ip IS NOT NULL",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -690,6 +690,7 @@ pub(crate) fn kind_from_tag(tag: &str) -> EventKind {
         "device_discovered" => EventKind::DeviceDiscovered,
         "connection_observed" => EventKind::ConnectionObserved,
         "modbus_command" => EventKind::ModbusCommand { function_code: 0, is_write: false },
+        "dnp3_command" => EventKind::Dnp3Command { function_code: 0, is_write: false },
         "alert_raised" => EventKind::AlertRaised,
         "analyst_note" => EventKind::AnalystNote,
         "operator_action" => EventKind::OperatorAction,
@@ -709,6 +710,7 @@ fn event_kind_tag(kind: &EventKind) -> &'static str {
         EventKind::DeviceDiscovered => "device_discovered",
         EventKind::ConnectionObserved => "connection_observed",
         EventKind::ModbusCommand { .. } => "modbus_command",
+        EventKind::Dnp3Command { .. } => "dnp3_command",
         EventKind::AlertRaised => "alert_raised",
         EventKind::AnalystNote => "analyst_note",
         EventKind::OperatorAction => "operator_action",

@@ -152,6 +152,37 @@ impl ProfileRecorder {
     /// profile changed, if any (the store uses it to know what to
     /// persist).
     pub fn observe(&mut self, parsed: &ParsedPacket) -> Option<IpAddr> {
+        // DNP3 path (Step B): no register values to learn — an
+        // outstation's answers are all function 0x81 — but the
+        // poll rhythm, the clients, and the commands it is asked
+        // to perform are exactly its behavior. Request functions
+        // are counted in the mix namespaced at +128 so they can
+        // never be confused with a Modbus code.
+        if let Some(dnp) = &parsed.dnp3 {
+            let (src, dst) = (parsed.src_ip?, parsed.dst_ip?);
+            let ts_ms = parsed.timestamp_ms;
+            let ts_s = ts_ms / 1000;
+            if !dnp.is_response {
+                let profile = self.profiles.entry(dst).or_insert_with(|| DeviceProfile::new(dst));
+                profile.polls += 1;
+                profile.clients.insert(src);
+                if let Some(last) = profile.last_request_ms {
+                    let gap = ts_ms - last;
+                    if (0..MAX_POLL_GAP_MS).contains(&gap) {
+                        profile.interval_sum_ms += gap;
+                        profile.interval_count += 1;
+                    }
+                }
+                profile.last_request_ms = Some(ts_ms);
+                *profile.function_mix.entry(128 + dnp.function_code).or_default() += 1;
+                profile.touch(ts_s);
+                return Some(dst);
+            }
+            let profile = self.profiles.entry(src).or_insert_with(|| DeviceProfile::new(src));
+            profile.responses += 1;
+            profile.touch(ts_s);
+            return Some(src);
+        }
         let mb = parsed.modbus.as_ref()?;
         let (src, dst) = (parsed.src_ip?, parsed.dst_ip?);
         let ts_ms = parsed.timestamp_ms;
@@ -362,5 +393,30 @@ mod tests {
         assert_eq!(mix_from_str("3:120,4:55,16:2"), mix);
         assert!(mix_from_str("").is_empty());
         assert!(mix_from_str("garbage").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod dnp3_profile_tests {
+    use super::*;
+    use std::net::Ipv4Addr;
+    use crate::parse::parse_packet;
+    use crate::sim;
+    use crate::source::Packet;
+
+    #[test]
+    fn dnp3_polls_build_a_profile() {
+        let mut recorder = ProfileRecorder::default();
+        for (i, at_ms) in [0i64, 2_000, 4_000].iter().enumerate() {
+            let frame = sim::build_dnp3_poll(sim::RTU1, 100 + i as u32);
+            let parsed = parse_packet(&Packet { timestamp_ms: *at_ms, data: frame }).unwrap();
+            recorder.observe(&parsed);
+        }
+        let rtu = IpAddr::V4(Ipv4Addr::new(10, 0, 1, 21));
+        let profile = recorder.profiles.get(&rtu).expect("RTU profile");
+        assert_eq!(profile.polls, 3);
+        // DNP3 read (1) is namespaced at 128 + 1.
+        assert_eq!(profile.function_mix.get(&129), Some(&3));
+        assert_eq!(profile.mean_poll_interval_ms(), Some(2_000));
     }
 }

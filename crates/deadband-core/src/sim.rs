@@ -91,10 +91,49 @@ pub const PLC2: PlantDevice = PlantDevice {
     role: DeviceRole::Plc,
     label: "Line 2 PLC",
 };
+/// The DNP3 segment (Step B): a SCADA master polling two RTUs —
+/// the electric/water side of the plant, speaking DNP3 on port
+/// 20000 where the PLC side speaks Modbus.
+pub const SCADA_MASTER: PlantDevice = PlantDevice {
+    ip: [10, 0, 3, 30],
+    mac: "02:db:00:00:03:1e",
+    level: PurdueLevel::Operations,
+    role: DeviceRole::Hmi,
+    label: "SCADA Master",
+};
+pub const RTU1: PlantDevice = PlantDevice {
+    ip: [10, 0, 1, 21],
+    mac: "02:db:00:00:01:15",
+    level: PurdueLevel::Control,
+    role: DeviceRole::Rtu,
+    label: "North RTU",
+};
+pub const RTU2: PlantDevice = PlantDevice {
+    ip: [10, 0, 1, 22],
+    mac: "02:db:00:00:01:16",
+    level: PurdueLevel::Control,
+    role: DeviceRole::Rtu,
+    label: "South RTU",
+};
+
+/// A roster device's DNP3 link address (the master is 1, the
+/// outstations are 101/102 — DNP3 carries its own addressing
+/// inside the protocol, separate from IP).
+pub fn dnp_addr(ip: [u8; 4]) -> u16 {
+    if ip == SCADA_MASTER.ip {
+        1
+    } else if ip == RTU1.ip {
+        101
+    } else if ip == RTU2.ip {
+        102
+    } else {
+        200
+    }
+}
 
 /// The plant's full device roster.
 pub fn roster() -> Vec<Device> {
-    [OFFICE_PC, HISTORIAN, HMI, PLC1, PLC2]
+    [OFFICE_PC, HISTORIAN, HMI, PLC1, PLC2, SCADA_MASTER, RTU1, RTU2]
         .iter()
         .map(|def| {
             let mut device = Device::new(IpAddr::V4(Ipv4Addr::from(def.ip)), 0);
@@ -109,7 +148,9 @@ pub fn roster() -> Vec<Device> {
 
 /// Looks up a roster device by IP (label/level/role ground truth).
 pub fn device_by_ip(ip: [u8; 4]) -> Option<PlantDevice> {
-    [OFFICE_PC, HISTORIAN, HMI, PLC1, PLC2].into_iter().find(|def| def.ip == ip)
+    [OFFICE_PC, HISTORIAN, HMI, PLC1, PLC2, SCADA_MASTER, RTU1, RTU2]
+        .into_iter()
+        .find(|def| def.ip == ip)
 }
 
 // ---------------------------------------------------------------------
@@ -288,6 +329,88 @@ fn build_modbus_write_echo(
     build_tcp_frame(plc.mac, client.mac, plc.ip, client.ip, 502, client_port, &adu, seq)
 }
 
+
+/// The master's ephemeral port for DNP3 conversations.
+pub const DNP_MASTER_PORT: u16 = 40003;
+
+/// Builds one complete DNP3 frame (link header + CRC-armoured
+/// blocks) around application bytes, inside a TCP frame on the
+/// DNP3 port. Public for the parser tests and the scenarios.
+pub fn build_dnp3(
+    src: PlantDevice,
+    dst: PlantDevice,
+    app: &[u8],
+    seq: u32,
+) -> Vec<u8> {
+    let from_master = src.ip == SCADA_MASTER.ip;
+    let mut link = vec![0x05, 0x64, (5 + app.len()) as u8, if from_master { 0xC4 } else { 0x44 }];
+    link.extend_from_slice(&dnp_addr(dst.ip).to_le_bytes());
+    link.extend_from_slice(&dnp_addr(src.ip).to_le_bytes());
+    let header_crc = crate::parse::dnp3_crc(&link[2..8]);
+    link.extend_from_slice(&header_crc.to_le_bytes());
+    for block in app.chunks(16) {
+        link.extend_from_slice(block);
+        let block_crc = crate::parse::dnp3_crc(block);
+        link.extend_from_slice(&block_crc.to_le_bytes());
+    }
+    let (src_port, dst_port) = if from_master {
+        (DNP_MASTER_PORT, crate::parse::DNP3_PORT)
+    } else {
+        (crate::parse::DNP3_PORT, DNP_MASTER_PORT)
+    };
+    build_tcp_frame(src.mac, dst.mac, src.ip, dst.ip, src_port, dst_port, &link, seq)
+}
+
+/// Application bytes for a DNP3 request: transport byte,
+/// application control byte, function, then the object bytes.
+fn dnp3_app(function: u8, objects: &[u8], seq: u32) -> Vec<u8> {
+    let mut app = vec![0xC0 | (seq & 0x3F) as u8, 0xC0 | (seq & 0x0F) as u8, function];
+    app.extend_from_slice(objects);
+    app
+}
+
+/// A class-0 read poll, master → RTU (group 60 variation 1, all).
+pub fn build_dnp3_poll(rtu: PlantDevice, seq: u32) -> Vec<u8> {
+    build_dnp3(SCADA_MASTER, rtu, &dnp3_app(0x01, &[60, 1, 0x06], seq), seq)
+}
+
+/// The RTU's answer to a poll: response function, IIN bytes, then
+/// a few analog input values (group 30) for flavour.
+pub fn build_dnp3_poll_response(rtu: PlantDevice, values: &[u16], seq: u32) -> Vec<u8> {
+    let mut objects = vec![30, 5, 0x00, 0, 3];
+    for value in values.iter().take(4) {
+        objects.extend_from_slice(&value.to_le_bytes());
+    }
+    let mut app = dnp3_app(0x81, &[], seq);
+    // Responses carry two IIN bytes after the function code.
+    app.truncate(3);
+    app.extend_from_slice(&[0, 0]);
+    app.extend_from_slice(&objects);
+    build_dnp3(rtu, SCADA_MASTER, &app, seq)
+}
+
+/// A direct operate carrying one control relay output block
+/// (group 12) — the master flipping an output on the RTU, the
+/// DNP3 peer of a Modbus write.
+pub fn build_dnp3_operate(rtu: PlantDevice, seq: u32) -> Vec<u8> {
+    // CROB: qualifier 0x17, count 1, index 0, then the 5-byte
+    // block (control code 0x04 latch off, count, on/off, status).
+    let objects = [12, 1, 0x17, 1, 0, 0x04, 1, 10, 0, 0];
+    build_dnp3(SCADA_MASTER, rtu, &dnp3_app(0x05, &objects, seq), seq)
+}
+
+/// Any DNP3 request with a chosen function code — restarts and
+/// other rare commands the scenarios and tests need.
+pub fn build_dnp3_command(
+    src: PlantDevice,
+    dst: PlantDevice,
+    function: u8,
+    objects: &[u8],
+    seq: u32,
+) -> Vec<u8> {
+    build_dnp3(src, dst, &dnp3_app(function, objects, seq), seq)
+}
+
 // ---------------------------------------------------------------------
 // The plant itself: a schedule of polls, writes, and chatter.
 
@@ -301,6 +424,8 @@ enum Job {
     HistorianPoll(PlantDevice),
     HmiSetpointWrite,
     OfficeWeb,
+    DnpPoll(PlantDevice),
+    DnpOperate,
 }
 
 struct Scheduled {
@@ -341,6 +466,9 @@ impl Plant {
         schedule.push(Scheduled { due_ms: 3_500, job: Job::HistorianPoll(PLC2) });
         schedule.push(Scheduled { due_ms: 20_000, job: Job::HmiSetpointWrite });
         schedule.push(Scheduled { due_ms: 5_000, job: Job::OfficeWeb });
+        schedule.push(Scheduled { due_ms: 1_200, job: Job::DnpPoll(RTU1) });
+        schedule.push(Scheduled { due_ms: 1_700, job: Job::DnpPoll(RTU2) });
+        schedule.push(Scheduled { due_ms: 9_000, job: Job::DnpOperate });
         Plant {
             clock_ms: 0,
             rng: Rng(SEED),
@@ -420,6 +548,30 @@ impl Plant {
                 self.queue_response(latency, echo);
                 frame
             }
+            Job::DnpPoll(rtu) => {
+                let seq = self.next_seq();
+                let frame = build_dnp3_poll(rtu, seq);
+                let base: u16 = if rtu.ip == RTU1.ip { 220 } else { 540 };
+                let values: Vec<u16> = (0..4)
+                    .map(|i| base + i * 11 + self.rng.below(7) as u16)
+                    .collect();
+                let rseq = self.next_seq();
+                let response = build_dnp3_poll_response(rtu, &values, rseq);
+                let latency = self.latency();
+                self.queue_response(latency, response);
+                frame
+            }
+            Job::DnpOperate => {
+                // The master works an output on the North RTU —
+                // legitimate control, from the one device allowed.
+                let seq = self.next_seq();
+                let frame = build_dnp3_operate(RTU1, seq);
+                let rseq = self.next_seq();
+                let response = build_dnp3(RTU1, SCADA_MASTER, &dnp3_app(0x81, &[0, 0], rseq), rseq);
+                let latency = self.latency();
+                self.queue_response(latency, response);
+                frame
+            }
             Job::OfficeWeb => {
                 let seq = self.next_seq();
                 build_tcp_frame(
@@ -442,6 +594,14 @@ impl Plant {
             Job::HistorianPoll(_) => 5_000,
             Job::HmiSetpointWrite => 47_000,
             Job::OfficeWeb => 7_000,
+            Job::DnpPoll(rtu) => {
+                if rtu.ip == RTU1.ip {
+                    2_000
+                } else {
+                    2_600
+                }
+            }
+            Job::DnpOperate => 67_000,
         }
     }
 
@@ -476,9 +636,10 @@ mod tests {
     #[test]
     fn roster_is_a_textbook_purdue_layout() {
         let devices = roster();
-        assert_eq!(devices.len(), 5);
+        assert_eq!(devices.len(), 8);
         assert!(devices.iter().any(|d| d.role == DeviceRole::Hmi));
         assert_eq!(devices.iter().filter(|d| d.role == DeviceRole::Plc).count(), 2);
+        assert_eq!(devices.iter().filter(|d| d.role == DeviceRole::Rtu).count(), 2);
     }
 
     #[test]
@@ -494,6 +655,7 @@ mod tests {
     fn plant_traffic_parses_as_mostly_modbus() {
         let mut plant = Plant::new();
         let mut modbus = 0;
+        let mut dnp3 = 0;
         let mut writes = 0;
         let mut total = 0;
         // ~90 virtual seconds: long enough for two setpoint writes.
@@ -516,9 +678,21 @@ mod tests {
                     assert_eq!(parsed.dst_port, Some(MODBUS_PORT));
                 }
             }
+            if parsed.protocol == Protocol::Dnp3 {
+                dnp3 += 1;
+                if let Some(dnp) = parsed.dnp3 {
+                    if dnp.is_control {
+                        // In normal operation only the master operates.
+                        assert_eq!(parsed.src_ip, Some(IpAddr::V4(Ipv4Addr::from(SCADA_MASTER.ip))));
+                    }
+                    assert!(dnp.crc_ok, "sim frames must carry honest checksums");
+                }
+            }
         }
         assert!(total > 100, "expected a busy plant, got {total} packets");
-        assert!(modbus > total * 3 / 4, "plant traffic is mostly Modbus");
+        assert!(modbus > total / 2, "Modbus is still the plant's biggest language");
+        assert!(dnp3 > total / 6, "the DNP3 segment is a real share of traffic");
+        assert!(modbus + dnp3 > total * 9 / 10, "OT protocols dominate the plant");
         assert!(writes >= 1, "the HMI setpoint write must occur");
     }
 

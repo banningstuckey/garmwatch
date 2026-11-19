@@ -137,6 +137,8 @@ impl From<&Event> for EventDto {
                 EventKind::ConnectionObserved => "connection",
                 EventKind::ModbusCommand { is_write: true, .. } => "write",
                 EventKind::ModbusCommand { .. } => "modbus",
+                EventKind::Dnp3Command { is_write: true, .. } => "write",
+                EventKind::Dnp3Command { .. } => "dnp3",
                 EventKind::AlertRaised => "alert",
                 EventKind::AnalystNote => "analyst",
                 EventKind::OperatorAction => "operator",
@@ -821,6 +823,17 @@ struct ProfileDto {
     last_seen_s: i64,
 }
 
+/// Plain name for a profile function-mix key. Modbus codes are
+/// counted as themselves; DNP3 request functions are namespaced
+/// at +128 by the recorder and named here via the core table.
+fn profile_function_name(function: u8) -> String {
+    if function >= 128 {
+        format!("DNP3 {}", deadband_core::parse::dnp3_function_name(function - 128))
+    } else {
+        modbus_function_name(function)
+    }
+}
+
 /// Plain name for a Modbus function code, for profile display.
 fn modbus_function_name(function: u8) -> String {
     match function {
@@ -860,7 +873,7 @@ fn device_profile(state: tauri::State<AppState>, ip: String) -> Option<ProfileDt
     let mut function_mix: Vec<FunctionMixDto> = profile
         .function_mix
         .iter()
-        .map(|(function, count)| FunctionMixDto { name: modbus_function_name(*function), count: *count })
+        .map(|(function, count)| FunctionMixDto { name: profile_function_name(*function), count: *count })
         .collect();
     function_mix.sort_by(|a, b| b.count.cmp(&a.count));
     Some(ProfileDto {

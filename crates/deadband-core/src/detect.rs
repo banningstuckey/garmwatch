@@ -146,6 +146,8 @@ pub fn rule_catalog() -> Vec<RuleInfo> {
         RuleInfo { id: "threat-intel", name: "Threat-intel match", description: "Traffic to or from an address on the threat-intel list." },
         RuleInfo { id: "rate-spike", name: "Traffic rate spike", description: "A device sends ~100× its normal traffic rate (floored at 60 packets per 10 s)." },
         RuleInfo { id: "write-outside-pattern", name: "Write outside the pattern", description: "A device writes to a controller it has never written to before (after baseline)." },
+        RuleInfo { id: "dnp3-restart", name: "DNP3 restart command", description: "A cold or warm restart is sent to a DNP3 outstation — it knocks the device offline and clears its state." },
+        RuleInfo { id: "dnp3-bad-crc", name: "DNP3 bad checksum", description: "A DNP3 frame fails its CRC — line noise, a dying device, or hand-crafted frames (fuzzing)." },
     ]
 }
 
@@ -368,9 +370,15 @@ impl RulesLayer {
             }
         }
 
-        // Rules 3 + 7 — Modbus writes.
-        if let Some(mb) = parsed.modbus {
-            if mb.is_write && !mb.is_response {
+        // Rules 3 + 7 — control actions: Modbus writes and DNP3
+        // control commands are the same sin in two languages.
+        let control_proto: Option<&'static str> = match (&parsed.modbus, &parsed.dnp3) {
+            (Some(mb), _) if mb.is_write && !mb.is_response => Some("Modbus"),
+            (_, Some(dnp)) if dnp.is_control && !dnp.is_response => Some("DNP3"),
+            _ => None,
+        };
+        if let Some(proto) = control_proto {
+            {
                 let src_role = device_of(src).map(|d| d.role).unwrap_or(DeviceRole::Unknown);
                 // Rule 3 — the writer is not an HMI / engineering station.
                 if !matches!(src_role, DeviceRole::Hmi | DeviceRole::EngineeringStation) {
@@ -385,10 +393,12 @@ impl RulesLayer {
                                 name(src),
                                 name(dst)
                             ),
-                            detail: "Only the HMI or engineering station should send write/control \
-                                     commands to a controller. A write from anything else is the \
-                                     Oldsmar pattern: an unexpected hand on the process."
-                                .to_string(),
+                            detail: format!(
+                                "Only the HMI, the engineering station, or the SCADA master should \
+                                 send write/control commands to a controller — this was a {proto} \
+                                 control command. A control action from anything else is the \
+                                 Oldsmar pattern: an unexpected hand on the process."
+                            ),
                             device_ip: Some(src),
                             factors: vec![(format!("writer role: {}", src_role.as_tag()), 100)],
                         },
@@ -421,6 +431,57 @@ impl RulesLayer {
                         &mut out,
                     );
                 }
+            }
+        }
+
+        // DNP3 rules — restarts and broken checksums.
+        if let Some(dnp) = &parsed.dnp3 {
+            if !dnp.crc_ok {
+                self.fire(
+                    format!("dnp3-bad-crc:{src}"),
+                    Alert {
+                        timestamp: ts,
+                        layer: "rules",
+                        severity: Severity::Medium,
+                        title: format!(
+                            "[dnp3-bad-crc] {} sent a DNP3 frame that failed its checksum",
+                            name(src)
+                        ),
+                        detail: "DNP3 frames carry a checksum every 16 bytes. A frame that \
+                                 fails it is line noise, a dying device — or someone crafting \
+                                 frames by hand (fuzzing), which is how protocol attacks start."
+                            .to_string(),
+                        device_ip: Some(src),
+                        factors: vec![("frame CRC mismatch".to_string(), 100)],
+                    },
+                    &mut out,
+                );
+            }
+            if dnp.is_restart && !dnp.is_response {
+                let src_role = device_of(src).map(|d| d.role).unwrap_or(DeviceRole::Unknown);
+                let authorized = matches!(src_role, DeviceRole::Hmi | DeviceRole::EngineeringStation);
+                self.fire(
+                    format!("dnp3-restart:{src}->{dst}"),
+                    Alert {
+                        timestamp: ts,
+                        layer: "rules",
+                        severity: if authorized { Severity::High } else { Severity::Critical },
+                        title: format!(
+                            "[dnp3-restart] {} sent a {} restart to {}",
+                            name(src),
+                            dnp.function_name(),
+                            name(dst)
+                        ),
+                        detail: "A restart command knocks an outstation offline and clears \
+                                 its state — the classic way to blind a control system or \
+                                 cover tracks. Legitimate restarts belong in a maintenance \
+                                 window; one outside it deserves a phone call, not a shrug."
+                            .to_string(),
+                        device_ip: Some(src),
+                        factors: vec![(format!("sender role: {}", src_role.as_tag()), 100)],
+                    },
+                    &mut out,
+                );
             }
         }
 
@@ -515,7 +576,10 @@ pub struct AnomalyLayer {
     /// Devices present in the baseline.
     known_devices: std::collections::HashSet<IpAddr>,
     /// device → Modbus function codes it normally uses as a client.
-    functions: std::collections::HashMap<IpAddr, std::collections::HashSet<u8>>,
+    /// Function vocabulary per device, namespaced in a u16:
+    /// Modbus codes as themselves, DNP3 codes + 256 (the two
+    /// protocols reuse numbers for different verbs).
+    functions: std::collections::HashMap<IpAddr, std::collections::HashSet<u16>>,
     /// device → per-chunk packet counts seen during learning.
     volume_history: std::collections::HashMap<IpAddr, Vec<usize>>,
     /// True when function/volume baselines are complete and frozen.
@@ -544,7 +608,7 @@ pub const ALERT_THRESHOLD: i32 = 50;
 struct SrcChunk {
     count: usize,
     peers: std::collections::HashSet<IpAddr>,
-    functions: std::collections::HashSet<u8>,
+    functions: std::collections::HashSet<u16>,
     wrote: bool,
 }
 
@@ -683,8 +747,16 @@ impl AnomalyLayer {
             entry.peers.insert(dst);
             if let Some(mb) = parsed.modbus {
                 if !mb.is_response {
-                    entry.functions.insert(mb.function_code);
+                    entry.functions.insert(u16::from(mb.function_code));
                     if mb.is_write {
+                        entry.wrote = true;
+                    }
+                }
+            }
+            if let Some(dnp) = parsed.dnp3 {
+                if !dnp.is_response {
+                    entry.functions.insert(256 + u16::from(dnp.function_code));
+                    if dnp.is_control {
                         entry.wrote = true;
                     }
                 }
@@ -727,7 +799,7 @@ impl AnomalyLayer {
             }
             // Never-seen functions (alert-counting only once frozen).
             let baseline_functions = self.functions.get(src);
-            let new_functions: Vec<u8> = agg
+            let new_functions: Vec<u16> = agg
                 .functions
                 .iter()
                 .filter(|fc| !baseline_functions.map(|set| set.contains(fc)).unwrap_or(false))
@@ -740,7 +812,12 @@ impl AnomalyLayer {
                     alert_score += w;
                 }
                 for fc in &new_functions {
-                    factors.push((format!("never-seen function {fc}"), w / new_functions.len() as i32));
+                    let label = if *fc >= 256 {
+                        format!("never-seen DNP3 function: {}", crate::parse::dnp3_function_name((*fc - 256) as u8))
+                    } else {
+                        format!("never-seen function {fc}")
+                    };
+                    factors.push((label, w / new_functions.len() as i32));
                 }
             }
             // A write from a device that never writes.

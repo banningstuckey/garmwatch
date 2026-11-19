@@ -279,6 +279,16 @@ pub enum EventKind {
         /// True for function codes that change state on the target.
         is_write: bool,
     },
+    /// A DNP3 command was decoded (application function code;
+    /// control vs read is the distinction detection cares about).
+    Dnp3Command {
+        /// DNP3 application function code (e.g. 1 = read,
+        /// 5 = direct operate).
+        function_code: u8,
+        /// True for function codes (or control objects) that
+        /// change state on the target.
+        is_write: bool,
+    },
     /// A detection layer raised an alert (detail lives in the alert).
     AlertRaised,
     /// The optional LLM analyst wrote a narrative about an alert

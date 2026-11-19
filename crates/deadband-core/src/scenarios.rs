@@ -14,8 +14,9 @@
 //!   with: one unknown device interrogating everything, fast.
 
 use crate::sim::{
-    build_modbus_read, build_modbus_read_response, build_modbus_write_single, build_tcp_frame,
-    PlantDevice, HISTORIAN, HMI, OFFICE_PC, PLC1, PLC2,
+    build_dnp3, build_dnp3_command, build_modbus_read, build_modbus_read_response,
+    build_modbus_write_single, build_tcp_frame, PlantDevice, HISTORIAN, HMI, OFFICE_PC, PLC1,
+    PLC2, RTU1,
 };
 use crate::source::Packet;
 
@@ -50,6 +51,15 @@ pub fn catalog() -> Vec<ScenarioInfo> {
             title: "Recon sweep",
             blurb: "An unknown device (10.0.9.99) interrogates every plant device, fast. \
                     Should trip: new device, traffic rate spike.",
+        },
+        ScenarioInfo {
+            id: "dnp3-rogue-master",
+            title: "Rogue DNP3 master works an RTU",
+            blurb: "An unknown device (10.0.9.77) speaks DNP3 like a control master: it polls \
+                    the North RTU, sends a direct operate to work a control output, then tries \
+                    a cold restart to knock the outstation offline. The utility-sector shape — \
+                    a fake master is how breaker attacks work. The write rules and the restart \
+                    rule should all fire.",
         },
         ScenarioInfo {
             id: "slow-recon",
@@ -238,8 +248,33 @@ pub fn packets(name: &str, base_ms: i64) -> Option<Vec<Packet>> {
         "office-reachdown" => Some(packets_office_reachdown(base_ms)),
         "recon-sweep" => Some(packets_recon_sweep(base_ms)),
         "slow-recon" => Some(packets_slow_recon(base_ms)),
+        "dnp3-rogue-master" => Some(packets_dnp3_rogue_master(base_ms)),
         _ => None,
     }
+}
+
+/// The rogue-master sequence: poll, one polite answer, a direct
+/// operate on a control output, then a cold restart.
+fn packets_dnp3_rogue_master(base_ms: i64) -> Vec<Packet> {
+    let crob = [12, 1, 0x17, 1, 0, 0x06, 1, 10, 0, 0];
+    let mut out = Vec::new();
+    out.push(Packet {
+        timestamp_ms: base_ms,
+        data: build_dnp3_command(LAPTOP, RTU1, 0x01, &[60, 1, 0x06], 7001),
+    });
+    out.push(Packet {
+        timestamp_ms: base_ms + 900,
+        data: build_dnp3(RTU1, LAPTOP, &[0xC0, 0xC0, 0x81, 0, 0], 7002),
+    });
+    out.push(Packet {
+        timestamp_ms: base_ms + 2_200,
+        data: build_dnp3_command(LAPTOP, RTU1, 0x05, &crob, 7003),
+    });
+    out.push(Packet {
+        timestamp_ms: base_ms + 4_000,
+        data: build_dnp3_command(LAPTOP, RTU1, 0x0D, &[], 7004),
+    });
+    out
 }
 
 #[cfg(test)]
@@ -296,6 +331,16 @@ mod tests {
     }
 
     #[test]
+    fn dnp3_rogue_master_is_caught() {
+        let store = store_with_history();
+        let titles = run_scenario(&store, "dnp3-rogue-master");
+        assert!(titles.iter().any(|t| t.contains("[new-device]")), "{titles:?}");
+        assert!(titles.iter().any(|t| t.contains("[write-from-non-hmi]")), "{titles:?}");
+        assert!(titles.iter().any(|t| t.contains("[write-outside-pattern]")), "{titles:?}");
+        assert!(titles.iter().any(|t| t.contains("[dnp3-restart]")), "{titles:?}");
+    }
+
+    #[test]
     fn office_reachdown_is_caught() {
         let store = store_with_history();
         let titles = run_scenario(&store, "office-reachdown");
@@ -315,7 +360,7 @@ mod tests {
     #[test]
     fn unknown_scenario_is_none() {
         assert!(packets("nonsense", 0).is_none());
-        assert_eq!(catalog().len(), 4);
+        assert_eq!(catalog().len(), 5);
     }
 
     #[test]

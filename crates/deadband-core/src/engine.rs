@@ -180,7 +180,30 @@ fn packet_event(
 ) -> Event {
     let src = name_of(store, src_ip);
     let dst = name_of(store, dst_ip);
-    let (kind, summary) = match &parsed.modbus {
+    let (kind, summary) = if let Some(dnp) = &parsed.dnp3 {
+        if dnp.is_response {
+            (
+                EventKind::PacketObserved,
+                format!(
+                    "{src} \u{2192} {dst}: DNP3 {} response{}",
+                    dnp.function_name(),
+                    if dnp.is_unsolicited { " (unsolicited)" } else { "" },
+                ),
+            )
+        } else {
+            (
+                EventKind::Dnp3Command { function_code: dnp.function_code, is_write: dnp.is_control },
+                format!(
+                    "{src} \u{2192} {dst}: {}DNP3 {}{}{}",
+                    if dnp.is_control { "WRITE \u{2014} " } else { "" },
+                    dnp.function_name(),
+                    if dnp.control_object { " (control output)" } else { "" },
+                    if !dnp.crc_ok { " [bad checksum]" } else { "" },
+                ),
+            )
+        }
+    } else {
+    match &parsed.modbus {
         Some(mb) if mb.is_response => (
             EventKind::PacketObserved,
             format!(
@@ -216,6 +239,7 @@ fn packet_event(
                 parsed.length,
             ),
         ),
+    }
     };
     let mut event = Event::new(timestamp_s, kind, summary);
     event.src_ip = Some(src_ip);
@@ -263,6 +287,29 @@ pub fn stats(store: &Store) -> PipelineStats {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_corrupt_dnp3_frame_raises_the_checksum_rule() {
+        let store = Store::open_in_memory().unwrap();
+        for device in sim::roster() {
+            store.add_device(&device).unwrap();
+        }
+        let mut rules = crate::detect::RulesLayer::default();
+        let mut anomaly = crate::detect::AnomalyLayer::default();
+        let mut frame = sim::build_dnp3_poll(sim::RTU1, 42);
+        // Flip a byte inside the application area (after the
+        // Ethernet/IP/TCP headers and the 10-byte DNP3 header):
+        // the frame still parses, but its block CRC now fails.
+        let at = frame.len() - 4;
+        frame[at] ^= 0xFF;
+        let packet = Packet { timestamp_ms: 1_700_000_000_000, data: frame };
+        let events = process_packet_full(&store, &packet, &mut rules, &mut anomaly, false);
+        assert!(
+            events.iter().any(|e| e.kind == EventKind::AlertRaised && e.summary.contains("[dnp3-bad-crc]")),
+            "alerts: {:?}",
+            events.iter().map(|e| &e.summary).collect::<Vec<_>>()
+        );
+    }
+
     use super::*;
     use crate::sim;
     use crate::source::{SimulatedSource, TrafficSource};
@@ -294,7 +341,7 @@ mod tests {
             }
         }
         let stats = stats(&store);
-        assert_eq!(stats.devices, 5);
+        assert_eq!(stats.devices, 8);
         assert!(stats.events > 250, "events stored: {}", stats.events);
         assert!(modbus_commands > 50, "commands seen: {modbus_commands}");
         assert!(writes >= 1, "at least one setpoint write in 300 packets");
@@ -327,7 +374,7 @@ mod tests {
     fn sample_replay_flags_the_laptop() {
         // The Phase 3 sample was bait; the rules are the trap. The
         // foreign laptop must be flagged for writing, and every one of
-        // the six foreign devices announced as new.
+        // the nine foreign devices announced as new.
         let store = Store::open_in_memory().unwrap();
         let mut rules = crate::detect::RulesLayer::new();
         let mut new_devices = 0;
@@ -347,7 +394,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(new_devices, 6, "all six foreign devices announced");
+        assert_eq!(new_devices, 9, "all nine foreign devices announced");
         assert_eq!(laptop_write_alerts, 2, "the laptop's write trips rules 3 and 7");
     }
 
@@ -473,3 +520,4 @@ mod tests {
         assert!(store.device_exists("10.9.9.9".parse().unwrap()).unwrap());
     }
 }
+

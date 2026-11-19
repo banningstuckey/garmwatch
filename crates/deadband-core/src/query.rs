@@ -188,12 +188,13 @@ fn split_tokens(input: &str) -> Vec<String> {
 }
 
 /// SQL for one UI kind. Writes are Modbus commands whose summary
-/// carries WRITE (storage is lossy — see `kind_from_tag`); reads are
+/// carries WRITE (storage is lossy — see `kind_from_tag`); command
+/// events are Modbus or DNP3 — reads are
 /// the other Modbus commands.
 fn kind_condition(kind: &str) -> &'static str {
     match kind {
-        "write" => "kind = 'modbus_command' AND instr(summary, 'WRITE') > 0",
-        "read" => "kind = 'modbus_command' AND instr(summary, 'WRITE') = 0",
+        "write" => "kind IN ('modbus_command', 'dnp3_command') AND instr(summary, 'WRITE') > 0",
+        "read" => "kind IN ('modbus_command', 'dnp3_command') AND instr(summary, 'WRITE') = 0",
         "alert" => "kind = 'alert_raised'",
         "operator" => "kind = 'operator_action'",
         "discovery" => "kind = 'device_discovered'",

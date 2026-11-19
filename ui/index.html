@@ -46,7 +46,7 @@
     <img id="splash-logo" src="./assets/deadband-logo.jpg" alt="Deadband"
          onerror="var s=document.getElementById('splash'); if(s) s.remove();">
     <p class="splash-sub">Real-time passive OT network monitor</p>
-    <p class="splash-version" id="splash-version">Deadband v0.1.13</p>
+    <p class="splash-version" id="splash-version">Deadband v0.1.14</p>
   </div>
   <div class="shell">
     <nmui-navigation rail expanded id="rail">
@@ -296,6 +296,17 @@
           <p class="dim">Open a window while an engineer is legitimately working on the plant: their traffic stops training the anomaly detector, and the alert badge stays quiet. Nothing is hidden — everything is still recorded, alerts raised during the window are marked “Maintenance window”, and starting or ending a window is itself logged, with who did it.</p>
         </nmui-card>
 
+        <nmui-card class="panel" variant="outlined">
+          <div class="panel-title">Daily triage — the last 24 hours</div>
+          <ol class="triage-list" id="triage-list"></ol>
+          <p class="dim" id="triage-counts"></p>
+          <div class="row">
+            <nmui-button id="btn-triage-explain" variant="outlined">Explain today (local AI)</nmui-button>
+          </div>
+          <div id="triage-narrative" class="analyst-output" hidden></div>
+          <p class="dim">The day ranked by what needs your eyes: canary touches first, then whoever is held in quarantine, the highest suspicion scores, vouches, and windows. The list is computed from the log; the AI brief is optional and only narrates it.</p>
+        </nmui-card>
+
         <nmui-card outlined class="log-card">
           <h2 class="card-title">Live event log</h2>
           <div class="filter-row" id="log-filters">
@@ -500,7 +511,7 @@
         </nmui-card>
       </section>
 
-      <footer class="note">Deadband v0.1.13 · UI: nmui v0.43.7, vendored and pinned (ui/vendor/nmui) · Themes selectable in Settings</footer>
+      <footer class="note">Deadband v0.1.14 · UI: nmui v0.43.7, vendored and pinned (ui/vendor/nmui) · Themes selectable in Settings</footer>
     </main>
   </div>
 
@@ -1080,6 +1091,43 @@
     loadBacklog();
   });
 
+  // ---- Daily triage ----
+  const triageListEl = document.getElementById('triage-list');
+  const triageCountsEl = document.getElementById('triage-counts');
+  function renderTriage(dto) {
+    if (!dto || !triageListEl) return;
+    triageListEl.innerHTML = '';
+    (dto.items || []).forEach((item) => {
+      const li = document.createElement('li');
+      const head = document.createElement('strong');
+      head.textContent = item.headline;
+      const detail = document.createElement('span');
+      detail.className = 'dim';
+      detail.textContent = ' — ' + item.detail;
+      li.appendChild(head);
+      li.appendChild(detail);
+      triageListEl.appendChild(li);
+    });
+    if (triageCountsEl) {
+      triageCountsEl.textContent = dto.event_count + ' events · ' + dto.alert_count + ' alerts · ' +
+        dto.canary_touches + ' canary touches · ' + dto.new_device_count + ' new devices · ' +
+        dto.operator_action_count + ' operator actions in the last 24 hours.';
+    }
+  }
+  const triageNarrativeEl = document.getElementById('triage-narrative');
+  document.getElementById('btn-triage-explain').addEventListener('click', async () => {
+    if (!triageNarrativeEl) return;
+    triageNarrativeEl.hidden = false;
+    triageNarrativeEl.textContent = 'Asking the local analyst about today…';
+    try {
+      const r = await invoke('explain_triage', { model: analystModel || null });
+      triageNarrativeEl.textContent = r.narrative;
+    } catch (err) {
+      triageNarrativeEl.textContent = 'The analyst could not answer: ' + err;
+    }
+    loadBacklog();
+  });
+
   loadCaptureInterfaces();
 
   // ---- canary PLC -----------------------------------------------------
@@ -1232,6 +1280,7 @@
       try { showCaptureStatus(await invoke('capture_status')); } catch (err) { /* capture status is best-effort */ }
       try { showCanaryStatus(await invoke('canary_status')); } catch (err) { /* canary status is best-effort */ }
       try { showMaintenanceStatus(await invoke('maintenance_status')); } catch (err) { /* window status is best-effort */ }
+      try { renderTriage(await invoke('daily_triage')); } catch (err) { /* triage is best-effort */ }
       const stateEl = document.getElementById('ov-state');
       const state = anomaly.risk_score >= 50 || rules.alerts_total > 0
         ? 'Needs attention' : anomaly.learning ? 'Learning' : 'Quiet';

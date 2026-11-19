@@ -1051,6 +1051,139 @@ fn release_actor(app: tauri::AppHandle, state: tauri::State<AppState>, ip: Strin
     Some(actor_detail_of(&store, addr))
 }
 
+// ---- daily triage (feature program) -------------------------------
+// The whole day, ranked, in plain English: a card in the Events
+// view computed from the same event log the suspicion scores read.
+// "Explain today" points the local analyst at the whole report.
+
+/// One triage line for the UI.
+#[derive(Debug, Serialize)]
+struct TriageItemDto {
+    headline: String,
+    detail: String,
+    ip: Option<String>,
+    score: Option<i32>,
+}
+
+/// The daily triage for the UI.
+#[derive(Debug, Serialize)]
+struct TriageDto {
+    generated_at_s: i64,
+    items: Vec<TriageItemDto>,
+    alert_count: usize,
+    event_count: usize,
+    new_device_count: usize,
+    canary_touches: usize,
+    operator_action_count: usize,
+}
+
+/// Builds the triage report from the store (shared by the card and
+/// the analyst command).
+fn triage_report_of(store: &Store) -> deadband_core::triage::TriageReport {
+    let now_s = now_ms() / 1000;
+    let events = store
+        .events_since(now_s - deadband_core::suspicion::WINDOW_S, 5000)
+        .unwrap_or_default();
+    let quarantined = store.quarantined().unwrap_or_default();
+    let scores = deadband_core::suspicion::compute_all(&events, &quarantined, now_s);
+    let names = store
+        .list_devices()
+        .unwrap_or_default()
+        .iter()
+        .map(|d| {
+            let name = match &d.label {
+                Some(label) => format!("{label} ({})", d.ip),
+                None => d.ip.to_string(),
+            };
+            (d.ip, name)
+        })
+        .collect();
+    deadband_core::triage::daily_report(&events, &scores, &quarantined, &names, now_s)
+}
+
+fn triage_dto(report: &deadband_core::triage::TriageReport) -> TriageDto {
+    TriageDto {
+        generated_at_s: report.generated_at_s,
+        items: report
+            .items
+            .iter()
+            .map(|item| TriageItemDto {
+                headline: item.headline.clone(),
+                detail: item.detail.clone(),
+                ip: item.ip.map(|ip| ip.to_string()),
+                score: item.score,
+            })
+            .collect(),
+        alert_count: report.alert_count,
+        event_count: report.event_count,
+        new_device_count: report.new_device_count,
+        canary_touches: report.canary_touches,
+        operator_action_count: report.operator_action_count,
+    }
+}
+
+/// The daily triage card's data.
+#[tauri::command]
+fn daily_triage(state: tauri::State<AppState>) -> TriageDto {
+    match state.store.lock() {
+        Ok(store) => triage_dto(&triage_report_of(&store)),
+        Err(_) => TriageDto {
+            generated_at_s: now_ms() / 1000,
+            items: Vec::new(),
+            alert_count: 0,
+            event_count: 0,
+            new_device_count: 0,
+            canary_touches: 0,
+            operator_action_count: 0,
+        },
+    }
+}
+
+/// Asks the local model for a prose brief of the whole day. The
+/// narrative is recorded as an analyst note, like incident briefs.
+#[tauri::command]
+async fn explain_triage(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    model: Option<String>,
+) -> Result<ExplainDto, String> {
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let chosen = model.filter(|m| !m.trim().is_empty()).or_else(|| {
+            http_local("GET", "/api/tags", None, std::time::Duration::from_secs(2))
+                .ok()
+                .and_then(|text| deadband_core::analyst::ollama_model_names(&text).into_iter().next())
+        });
+        let Some(model) = chosen else {
+            return Err("No local model available — is Ollama running with a model pulled?".to_string());
+        };
+        let prompt = {
+            let store = store.lock().map_err(|_| "store lock poisoned".to_string())?;
+            deadband_core::triage::build_triage_prompt(&triage_report_of(&store))
+        };
+        let client = OllamaClient { model: model.clone() };
+        let narrative = client
+            .explain(&prompt)
+            .map_err(|e| e.to_string())?;
+        let preview: String = narrative.chars().take(280).collect();
+        let note = deadband_core::model::Event::new(
+            now_ms() / 1000,
+            EventKind::AnalystNote,
+            format!("Analyst daily brief ({model}): {preview}"),
+        );
+        if let Ok(store) = store.lock() {
+            if let Ok(id) = store.record_event(&note) {
+                let mut stored = note.clone();
+                stored.id = Some(id);
+                let _ = app.emit("traffic", EventDto::from(&stored));
+            }
+        }
+        Ok(ExplainDto { narrative, model, alert_summary: "Daily triage".to_string() })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // ---- canary PLC (feature program, item 3) ---------------------------
 // A fake controller that nothing legitimate ever talks to. Any touch
 // is an intruder by definition — no baseline, no false positives.
@@ -1842,7 +1975,9 @@ pub fn run() {
             actor_detail,
             ignore_actor,
             quarantine_actor,
-            release_actor
+            release_actor,
+            daily_triage,
+            explain_triage
         ])
         .run(tauri::generate_context!())
         .expect("error while running Deadband");

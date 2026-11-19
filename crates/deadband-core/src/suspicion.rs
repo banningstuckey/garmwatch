@@ -88,13 +88,15 @@ fn decay(age_s: i64) -> f64 {
 }
 
 /// One parsed Ignore: who made it (from the audit summary).
-struct IgnoreMark {
-    at_s: i64,
-    user: String,
+pub struct IgnoreMark {
+    /// When the Ignore was recorded, Unix seconds.
+    pub at_s: i64,
+    /// The operator who made it.
+    pub user: String,
 }
 
 /// Parses an "Ignored actor <ip> — … by <user>." audit summary.
-fn parse_ignore(event: &Event) -> Option<(IpAddr, IgnoreMark)> {
+pub fn parse_ignore(event: &Event) -> Option<(IpAddr, IgnoreMark)> {
     let rest = event.summary.strip_prefix("Ignored actor ")?;
     let ip: IpAddr = rest.split_whitespace().next()?.parse().ok()?;
     let user = event

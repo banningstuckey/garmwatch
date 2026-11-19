@@ -52,6 +52,7 @@ pub mod sim;
 pub mod source;
 pub mod store;
 pub mod suspicion;
+pub mod triage;
 
 /// Snapshot of engine identity/health, surfaced to the UI so the frontend
 /// can prove the Rust ↔ UI bridge works and display what it is running.

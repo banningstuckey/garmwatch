@@ -399,6 +399,8 @@ footer.note { color: var(--md-sys-color-on-surface-variant); font-size: 12px; }
   white-space: nowrap;
 }
 .actor-actions { margin-top: 8px; }
+.triage-list { margin: 6px 0 6px 20px; padding: 0; }
+.triage-list li { margin: 5px 0; }
 .action-sheet {
   white-space: pre-wrap;
   font-size: 0.85em;

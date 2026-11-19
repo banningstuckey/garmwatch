@@ -25,6 +25,7 @@ struct AppState {
     capture_info: Arc<Mutex<CaptureInfo>>,
     canary_server: Arc<Mutex<Option<deadband_core::canary::CanaryServer>>>,
     canary_info: Arc<Mutex<CanaryInfo>>,
+    maintenance: Arc<Mutex<MaintenanceInfo>>,
     anomaly_shared: Arc<Mutex<AnomalyStatusDto>>,
 }
 
@@ -138,6 +139,7 @@ impl From<&Event> for EventDto {
                 EventKind::ModbusCommand { .. } => "modbus",
                 EventKind::AlertRaised => "alert",
                 EventKind::AnalystNote => "analyst",
+                EventKind::OperatorAction => "operator",
             },
             src_ip: event.src_ip.map(|ip| ip.to_string()),
             dst_ip: event.dst_ip.map(|ip| ip.to_string()),
@@ -189,6 +191,7 @@ fn start_simulation(app: tauri::AppHandle, state: tauri::State<AppState>) -> Sim
     let store = Arc::clone(&state.store);
     let running = Arc::clone(&state.running);
     let anomaly_shared = Arc::clone(&state.anomaly_shared);
+    let maint_handle = Arc::clone(&state.maintenance);
     std::thread::spawn(move || {
         let mut source = SimulatedSource::new(now_ms());
         let mut rules = match store.lock() {
@@ -208,6 +211,7 @@ fn start_simulation(app: tauri::AppHandle, state: tauri::State<AppState>) -> Sim
                     let events = match store.lock() {
                         Ok(store) => deadband_core::engine::process_packet_full(
                             &store, &packet, &mut rules, &mut anomaly,
+                            maintenance_active(&maint_handle),
                         ),
                         Err(_) => Vec::new(),
                     };
@@ -318,6 +322,7 @@ fn start_replay(
     let running = Arc::clone(&state.replay_running);
     let info_handle = Arc::clone(&state.replay_info);
     let anomaly_shared = Arc::clone(&state.anomaly_shared);
+    let maint_handle = Arc::clone(&state.maintenance);
     std::thread::spawn(move || {
         let mut rules = match store.lock() {
             Ok(store) => deadband_core::detect::RulesLayer::from_store(&store),
@@ -347,6 +352,7 @@ fn start_replay(
             let events = match store.lock() {
                 Ok(store) => deadband_core::engine::process_packet_full(
                     &store, &shifted, &mut rules, &mut anomaly,
+                    maintenance_active(&maint_handle),
                 ),
                 Err(_) => Vec::new(),
             };
@@ -576,6 +582,7 @@ fn spawn_capture_thread(
     let running = Arc::clone(&state.capture_running);
     let info_handle = Arc::clone(&state.capture_info);
     let anomaly_shared = Arc::clone(&state.anomaly_shared);
+    let maint_handle = Arc::clone(&state.maintenance);
     std::thread::spawn(move || {
         let mut rules = match store.lock() {
             Ok(store) => deadband_core::detect::RulesLayer::from_store(&store),
@@ -600,6 +607,7 @@ fn spawn_capture_thread(
                     let events = match store.lock() {
                         Ok(store) => deadband_core::engine::process_packet_full(
                             &store, &owned, &mut rules, &mut anomaly,
+                            maintenance_active(&maint_handle),
                         ),
                         Err(_) => Vec::new(),
                     };
@@ -639,6 +647,145 @@ fn spawn_capture_thread(
     });
 }
 
+
+// ---- maintenance window --------------------------------------------
+// One button, time-boxed. While a window is open, an engineer is
+// legitimately working on the plant: the anomaly layer stops
+// learning (their laptop must not become "normal") and pauses its
+// alerts, the rules still record everything but their alerts are
+// stored marked "Maintenance window:", and the alert badge stays
+// quiet. Nothing is hidden — the window's traffic is all in the
+// log, in context. Start and stop are operator actions: they land
+// in the log with who did them (the audit trail's first citizens).
+
+/// The open window, if any.
+#[derive(Debug, Clone, Default)]
+struct MaintenanceInfo {
+    ends_at_ms: Option<i64>,
+    started_by: String,
+    minutes: u32,
+}
+
+/// What the UI polls about the window.
+#[derive(Debug, Serialize)]
+struct MaintenanceStatus {
+    active: bool,
+    ends_at_ms: Option<i64>,
+    minutes_left: i64,
+    started_by: Option<String>,
+}
+
+/// The OS account at the keyboard — the audit stamp's "who" until
+/// the app grows accounts of its own.
+fn os_user() -> String {
+    std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "unknown user".to_string())
+}
+
+/// True while a window is open (its end time is still ahead).
+fn maintenance_active(info: &Arc<Mutex<MaintenanceInfo>>) -> bool {
+    info.lock()
+        .map(|info| info.ends_at_ms.map(|ends| ends > now_ms()).unwrap_or(false))
+        .unwrap_or(false)
+}
+
+fn maintenance_status_of(state: &AppState) -> MaintenanceStatus {
+    let now = now_ms();
+    match state.maintenance.lock() {
+        Ok(info) => {
+            let active = info.ends_at_ms.map(|ends| ends > now).unwrap_or(false);
+            MaintenanceStatus {
+                active,
+                ends_at_ms: if active { info.ends_at_ms } else { None },
+                minutes_left: if active {
+                    (info.ends_at_ms.unwrap_or(now) - now + 59_999) / 60_000
+                } else {
+                    0
+                },
+                started_by: if active { Some(info.started_by.clone()) } else { None },
+            }
+        }
+        Err(_) => MaintenanceStatus { active: false, ends_at_ms: None, minutes_left: 0, started_by: None },
+    }
+}
+
+/// Records an operator action in the log (and on the live stream).
+/// These rows are the audit trail: who did it is in the summary.
+fn record_operator_event(app: &tauri::AppHandle, store: &Arc<Mutex<Store>>, summary: String) {
+    let mut event = Event::new(now_ms() / 1000, EventKind::OperatorAction, summary);
+    if let Ok(store) = store.lock() {
+        if let Ok(id) = store.record_event(&event) {
+            event.id = Some(id);
+        }
+    }
+    let _ = app.emit("traffic", EventDto::from(&event));
+}
+
+/// Opens a maintenance window for `minutes` (clamped to 5–480).
+/// Starting one while another is open changes nothing.
+#[tauri::command]
+fn start_maintenance(app: tauri::AppHandle, state: tauri::State<AppState>, minutes: u32) -> MaintenanceStatus {
+    let minutes = minutes.clamp(5, 480);
+    if !maintenance_active(&state.maintenance) {
+        let user = os_user();
+        if let Ok(mut info) = state.maintenance.lock() {
+            info.ends_at_ms = Some(now_ms() + i64::from(minutes) * 60_000);
+            info.started_by = user.clone();
+            info.minutes = minutes;
+        }
+        record_operator_event(
+            &app,
+            &state.store,
+            format!(
+                "Maintenance window started by {user} — {minutes} minutes. While it runs, the anomaly layer is not learning, and alerts are marked 'Maintenance window', not hidden."
+            ),
+        );
+    }
+    maintenance_status_of(&state)
+}
+
+/// Closes the open window early. The close is recorded too.
+#[tauri::command]
+fn stop_maintenance(app: tauri::AppHandle, state: tauri::State<AppState>) -> MaintenanceStatus {
+    if maintenance_active(&state.maintenance) {
+        if let Ok(mut info) = state.maintenance.lock() {
+            info.ends_at_ms = None;
+        }
+        record_operator_event(
+            &app,
+            &state.store,
+            format!("Maintenance window ended early by {}.", os_user()),
+        );
+    }
+    maintenance_status_of(&state)
+}
+
+/// The window's state. Polling is also how a natural expiry gets
+/// its closing entry in the log: the first poll after the end time
+/// records it, once.
+#[tauri::command]
+fn maintenance_status(app: tauri::AppHandle, state: tauri::State<AppState>) -> MaintenanceStatus {
+    let expired = match state.maintenance.lock() {
+        Ok(mut info) => match info.ends_at_ms {
+            Some(ends) if ends <= now_ms() => {
+                let closing = (info.started_by.clone(), info.minutes);
+                info.ends_at_ms = None;
+                Some(closing)
+            }
+            _ => None,
+        },
+        Err(_) => None,
+    };
+    if let Some((started_by, minutes)) = expired {
+        record_operator_event(
+            &app,
+            &state.store,
+            format!("Maintenance window ended — it ran its full {minutes} minutes (started by {started_by})."),
+        );
+    }
+    maintenance_status_of(&state)
+}
 
 // ---- canary PLC (feature program, item 3) ---------------------------
 // A fake controller that nothing legitimate ever talks to. Any touch
@@ -880,6 +1027,7 @@ fn run_scenario(app: tauri::AppHandle, state: tauri::State<AppState>, name: Stri
     };
     let store = Arc::clone(&state.store);
     let anomaly_shared = Arc::clone(&state.anomaly_shared);
+    let maint_handle = Arc::clone(&state.maintenance);
     std::thread::spawn(move || {
         let mut rules = match store.lock() {
             Ok(store) => deadband_core::detect::RulesLayer::from_store(&store),
@@ -901,6 +1049,7 @@ fn run_scenario(app: tauri::AppHandle, state: tauri::State<AppState>, name: Stri
             let events = match store.lock() {
                 Ok(store) => deadband_core::engine::process_packet_full(
                     &store, packet, &mut rules, &mut anomaly,
+                    maintenance_active(&maint_handle),
                 ),
                 Err(_) => Vec::new(),
             };
@@ -1377,6 +1526,7 @@ pub fn run() {
                 capture_info: Arc::new(Mutex::new(CaptureInfo::default())),
                 canary_server: Arc::new(Mutex::new(None)),
                 canary_info: Arc::new(Mutex::new(CanaryInfo::default())),
+                maintenance: Arc::new(Mutex::new(MaintenanceInfo::default())),
                 anomaly_shared: Arc::new(Mutex::new(AnomalyStatusDto::default())),
             });
             Ok(())
@@ -1408,7 +1558,10 @@ pub fn run() {
             capture_status,
             start_canary,
             stop_canary,
-            canary_status
+            canary_status,
+            start_maintenance,
+            stop_maintenance,
+            maintenance_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running Deadband");

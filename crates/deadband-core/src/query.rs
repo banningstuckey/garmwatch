@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! kind:write | kind:alert | kind:read | kind:discovery
-//! kind:connection | kind:packet | kind:analyst
+//! kind:connection | kind:packet | kind:analyst | kind:operator
 //! src:10.0.1.11 | dst:10.0.1.11 | ip:10.0.1.11   (ip = either side)
 //! text:modbus | text:"write single register"     (substring of the summary)
 //! last:30m | last:1h | last:24h | last:7d         (relative to now)
@@ -47,8 +47,8 @@ pub struct Query {
 }
 
 /// Valid `kind:` values, in the order the log's filter chips show them.
-pub const QUERY_KINDS: [&str; 7] = [
-    "alert", "write", "read", "discovery", "connection", "packet", "analyst",
+pub const QUERY_KINDS: [&str; 8] = [
+    "alert", "write", "read", "discovery", "connection", "packet", "analyst", "operator",
 ];
 
 /// Parse a query string. `now_s` is the current Unix second, used to
@@ -195,6 +195,7 @@ fn kind_condition(kind: &str) -> &'static str {
         "write" => "kind = 'modbus_command' AND instr(summary, 'WRITE') > 0",
         "read" => "kind = 'modbus_command' AND instr(summary, 'WRITE') = 0",
         "alert" => "kind = 'alert_raised'",
+        "operator" => "kind = 'operator_action'",
         "discovery" => "kind = 'device_discovered'",
         "connection" => "kind = 'connection_observed'",
         "packet" => "kind = 'packet_observed'",
@@ -332,6 +333,18 @@ mod tests {
         let events = run(&store, "");
         assert_eq!(events.len(), 4);
         assert_eq!(events[0].summary, "new device 10.0.9.77 seen");
+    }
+
+    #[test]
+    fn kind_operator_matches_operator_actions() {
+        let store = store_with_events();
+        let mut event = Event::new(1_700_000_500, EventKind::OperatorAction,
+            "Maintenance window started by banning — 60 minutes".to_string());
+        event.src_ip = None;
+        store.record_event(&event).unwrap();
+        let found = run(&store, "kind:operator");
+        assert_eq!(found.len(), 1, "the operator action is findable: {found:?}");
+        assert!(found[0].summary.contains("Maintenance window started"));
     }
 
     #[test]

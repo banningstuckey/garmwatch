@@ -100,24 +100,35 @@ pub fn process_packet_with_rules(
 ) -> Vec<Event> {
     let mut events = process_packet(store, packet);
     let alerts = rules.observe_packet(store, packet, &events);
-    append_alerts(store, packet, alerts, &mut events);
+    append_alerts(store, packet, alerts, &mut events, false);
     events
 }
 
 /// The full detection stack: rules (per packet) plus the anomaly
 /// layer (per chunk — its alerts surface when a chunk closes). This
 /// is what the app's feeds run.
+///
+/// `maintenance` is the maintenance window: while it is open, the
+/// anomaly layer is paused (the traffic neither teaches it nor
+/// alerts it — an engineer's legitimate work is not an attack, and
+/// their laptop must not become "normal"), and every alert the
+/// rules still raise is stored with a "Maintenance window:" prefix
+/// so the log shows it in context and the UI can keep it out of the
+/// alert badge. Nothing is hidden: the window's traffic is all in
+/// the log, marked.
 pub fn process_packet_full(
     store: &Store,
     packet: &Packet,
     rules: &mut crate::detect::RulesLayer,
     anomaly: &mut crate::detect::AnomalyLayer,
+    maintenance: bool,
 ) -> Vec<Event> {
+    anomaly.paused = maintenance;
     let mut events = process_packet(store, packet);
     let rule_alerts = rules.observe_packet(store, packet, &events);
-    append_alerts(store, packet, rule_alerts, &mut events);
+    append_alerts(store, packet, rule_alerts, &mut events, maintenance);
     let anomaly_alerts = anomaly.observe_packet(store, packet, &events);
-    append_alerts(store, packet, anomaly_alerts, &mut events);
+    append_alerts(store, packet, anomaly_alerts, &mut events, maintenance);
     events
 }
 
@@ -129,6 +140,7 @@ fn append_alerts(
     packet: &Packet,
     alerts: Vec<crate::detect::Alert>,
     events: &mut Vec<Event>,
+    maintenance: bool,
 ) {
     if alerts.is_empty() {
         return;
@@ -140,7 +152,11 @@ fn append_alerts(
             let mut event = Event::new(
                 alert.timestamp,
                 EventKind::AlertRaised,
-                format!("{} — {}", alert.title, alert.detail),
+                if maintenance {
+                    format!("Maintenance window: {} — {}", alert.title, alert.detail)
+                } else {
+                    format!("{} — {}", alert.title, alert.detail)
+                },
             );
             event.src_ip = alert.device_ip;
             event.dst_ip = parsed.as_ref().and_then(|p| p.dst_ip);
@@ -346,7 +362,7 @@ mod tests {
         let mut warnings = 0;
         for _ in 0..2000 {
             let packet = source.next_packet().unwrap();
-            for event in process_packet_full(&store, &packet, &mut rules, &mut anomaly) {
+            for event in process_packet_full(&store, &packet, &mut rules, &mut anomaly, false) {
                 if event.summary.contains("[early-warning]") {
                     warnings += 1;
                 }
@@ -355,6 +371,60 @@ mod tests {
         assert_eq!(warnings, 0, "normal traffic must not raise early warnings");
         assert!(!anomaly.learning, "trained after 13 chunks");
         assert!(anomaly.status().risk_score < 50, "risk stays low: {}", anomaly.status().risk_score);
+    }
+
+    #[test]
+    fn maintenance_window_pauses_learning_and_marks_alerts() {
+        // Learning pause: 2,000 packets inside a window teach the
+        // anomaly layer nothing; the same traffic outside the window
+        // trains it.
+        let store = Store::open_in_memory().unwrap();
+        for device in sim::roster() {
+            store.add_device(&device).unwrap();
+        }
+        let mut rules = crate::detect::RulesLayer::new();
+        let mut anomaly = crate::detect::AnomalyLayer::new();
+        let mut source = SimulatedSource::new(1_700_000_000_000);
+        for _ in 0..2000 {
+            let packet = source.next_packet().unwrap();
+            process_packet_full(&store, &packet, &mut rules, &mut anomaly, true);
+        }
+        assert!(anomaly.learning, "a window's traffic must not train the layer");
+        assert_eq!(anomaly.status().risk_score, 0, "no scoring inside a window");
+        let mut source = SimulatedSource::new(1_700_100_000_000);
+        for _ in 0..2000 {
+            let packet = source.next_packet().unwrap();
+            process_packet_full(&store, &packet, &mut rules, &mut anomaly, false);
+        }
+        assert!(!anomaly.learning, "the same traffic outside a window trains it");
+
+        // Marking: the sample laptop's write alerts carry the prefix
+        // inside a window, and not outside one.
+        for maintenance in [true, false] {
+            let store = Store::open_in_memory().unwrap();
+            let mut rules = crate::detect::RulesLayer::new();
+            let mut anomaly = crate::detect::AnomalyLayer::new();
+            let mut marked = 0;
+            let mut unmarked = 0;
+            for packet in crate::sample::sample_packets() {
+                for event in process_packet_full(&store, &packet, &mut rules, &mut anomaly, maintenance) {
+                    if event.kind == EventKind::AlertRaised {
+                        if event.summary.starts_with("Maintenance window: ") {
+                            marked += 1;
+                        } else {
+                            unmarked += 1;
+                        }
+                    }
+                }
+            }
+            if maintenance {
+                assert!(marked > 0, "window alerts are marked");
+                assert_eq!(unmarked, 0, "no unmarked alerts inside a window");
+            } else {
+                assert_eq!(marked, 0, "no window marks outside a window");
+                assert!(unmarked > 0, "the sample still alerts outside a window");
+            }
+        }
     }
 
     #[test]

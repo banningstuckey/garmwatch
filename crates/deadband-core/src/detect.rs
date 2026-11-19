@@ -500,6 +500,12 @@ impl DetectionLayer for RulesLayer {
 pub struct AnomalyLayer {
     /// True while the layer is still learning (alerts suppressed).
     pub learning: bool,
+    /// True while a maintenance window is open: the layer neither
+    /// learns from the traffic nor alerts on it — the engineer's
+    /// laptop must not become "normal", and their legitimate work
+    /// must not read as an attack. The open chunk simply waits;
+    /// its pre-window contents are scored when the window closes.
+    pub paused: bool,
     /// Current plant-wide risk score, 0 (normal) and up.
     pub risk_score: i32,
     /// device → peers it normally talks to.
@@ -576,6 +582,7 @@ impl AnomalyLayer {
     pub fn new() -> AnomalyLayer {
         AnomalyLayer {
             learning: true,
+            paused: false,
             risk_score: 0,
             peers: Default::default(),
             writers: Default::default(),
@@ -635,6 +642,14 @@ impl AnomalyLayer {
         packet: &crate::source::Packet,
         packet_events: &[Event],
     ) -> Vec<Alert> {
+        if self.paused {
+            // Maintenance window: this traffic does not exist for
+            // the anomaly layer. Nothing accumulates, nothing
+            // learns, nothing alerts. The open chunk (if any) keeps
+            // its pre-window contents and is scored when the first
+            // post-window packet closes it.
+            return Vec::new();
+        }
         let parsed = match crate::parse::parse_packet(packet) {
             Ok(parsed) => parsed,
             Err(_) => return Vec::new(),

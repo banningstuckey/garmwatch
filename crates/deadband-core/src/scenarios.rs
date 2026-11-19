@@ -332,7 +332,7 @@ mod tests {
             let mut source = SimulatedSource::new(1_700_000_100_000);
             for _ in 0..1300 {
                 let packet = source.next_packet().unwrap();
-                let events = engine::process_packet_full(&store, &packet, &mut rules, &mut anomaly);
+                let events = engine::process_packet_full(&store, &packet, &mut rules, &mut anomaly, false);
                 assert!(
                     !events.iter().any(|e| e.summary.contains("[early-warning]")),
                     "training traffic must not warn"
@@ -345,7 +345,7 @@ mod tests {
         let mut anomaly = crate::detect::AnomalyLayer::from_store(&store);
         let mut saw_warning = false;
         for packet in packets("slow-recon", 1_700_000_400_000).unwrap() {
-            for event in engine::process_packet_full(&store, &packet, &mut rules, &mut anomaly) {
+            for event in engine::process_packet_full(&store, &packet, &mut rules, &mut anomaly, false) {
                 if event.kind == EventKind::AlertRaised {
                     if event.summary.contains("[early-warning]") {
                         saw_warning = true;

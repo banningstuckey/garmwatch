@@ -412,6 +412,7 @@ pub(crate) fn kind_from_tag(tag: &str) -> EventKind {
         "modbus_command" => EventKind::ModbusCommand { function_code: 0, is_write: false },
         "alert_raised" => EventKind::AlertRaised,
         "analyst_note" => EventKind::AnalystNote,
+        "operator_action" => EventKind::OperatorAction,
         _ => EventKind::PacketObserved,
     }
 }
@@ -430,6 +431,7 @@ fn event_kind_tag(kind: &EventKind) -> &'static str {
         EventKind::ModbusCommand { .. } => "modbus_command",
         EventKind::AlertRaised => "alert_raised",
         EventKind::AnalystNote => "analyst_note",
+        EventKind::OperatorAction => "operator_action",
     }
 }
 

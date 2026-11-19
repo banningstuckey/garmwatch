@@ -285,6 +285,12 @@ pub enum EventKind {
     /// (Phase 6). Advisory prose, clearly labelled AI-generated;
     /// never counted as an alert itself.
     AnalystNote,
+    /// A human operator did something in the app — started a
+    /// maintenance window, ignored an actor, quarantined one. These
+    /// rows are the audit trail: every action is attributable
+    /// (who, which terminal, when — in the summary until the trail
+    /// gets its own columns).
+    OperatorAction,
 }
 
 /// One timestamped observation flowing through the pipeline. Events are

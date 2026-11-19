@@ -46,7 +46,7 @@
     <img id="splash-logo" src="./assets/deadband-logo.jpg" alt="Deadband"
          onerror="var s=document.getElementById('splash'); if(s) s.remove();">
     <p class="splash-sub">Real-time passive OT network monitor</p>
-    <p class="splash-version" id="splash-version">Deadband v0.1.10</p>
+    <p class="splash-version" id="splash-version">Deadband v0.1.11</p>
   </div>
   <div class="shell">
     <nmui-navigation rail expanded id="rail">
@@ -279,6 +279,23 @@
           <p class="dim" id="canary-touched" hidden></p>
         </nmui-card>
 
+        <nmui-card class="panel" variant="outlined">
+          <div class="panel-title">Maintenance window</div>
+          <p class="dim" id="maintenance-status">No maintenance window open.</p>
+          <div class="row">
+            <label class="capture-label" for="maintenance-minutes">Window</label>
+            <select id="maintenance-minutes" class="native-select">
+              <option value="30">30 minutes</option>
+              <option value="60" selected>1 hour</option>
+              <option value="120">2 hours</option>
+              <option value="240">4 hours</option>
+            </select>
+            <nmui-button id="btn-maintenance-start" variant="filled">Start window</nmui-button>
+            <nmui-button id="btn-maintenance-stop" variant="outlined">End now</nmui-button>
+          </div>
+          <p class="dim">Open a window while an engineer is legitimately working on the plant: their traffic stops training the anomaly detector, and the alert badge stays quiet. Nothing is hidden — everything is still recorded, alerts raised during the window are marked “Maintenance window”, and starting or ending a window is itself logged, with who did it.</p>
+        </nmui-card>
+
         <nmui-card outlined class="log-card">
           <h2 class="card-title">Live event log</h2>
           <div class="filter-row" id="log-filters">
@@ -483,7 +500,7 @@
         </nmui-card>
       </section>
 
-      <footer class="note">Deadband v0.1.10 · UI: nmui v0.43.7, vendored and pinned (ui/vendor/nmui) · Themes selectable in Settings</footer>
+      <footer class="note">Deadband v0.1.11 · UI: nmui v0.43.7, vendored and pinned (ui/vendor/nmui) · Themes selectable in Settings</footer>
     </main>
   </div>
 
@@ -618,7 +635,7 @@
     if (logFilter === 'all') return true;
     if (logFilter === 'alerts') return kind === 'alert' || kind === 'analyst';
     if (logFilter === 'writes') return kind === 'write';
-    return kind === 'alert' || kind === 'write' || kind === 'discovery' || kind === 'analyst';
+    return kind === 'alert' || kind === 'write' || kind === 'discovery' || kind === 'analyst' || kind === 'operator';
   }
   function rowShown(row) {
     if (queryActive) return true;
@@ -729,7 +746,7 @@
 
   // ---- query autocomplete -------------------------------------------
   const QUERY_FIELDS = ['kind:', 'src:', 'dst:', 'ip:', 'text:', 'last:'];
-  const QUERY_KINDS = ['alert', 'write', 'read', 'discovery', 'connection', 'packet', 'analyst'];
+  const QUERY_KINDS = ['alert', 'write', 'read', 'discovery', 'connection', 'packet', 'analyst', 'operator'];
   const QUERY_WINDOWS = ['5m', '15m', '30m', '1h', '6h', '24h', '7d'];
   let querySuggestIdx = -1;
   let querySuggestItems = [];
@@ -1038,6 +1055,31 @@
     try { showCaptureStatus(await invoke('stop_capture')); }
     catch (err) { /* best-effort */ }
   });
+  // ---- Maintenance window ----
+  const maintenanceStatusEl = document.getElementById('maintenance-status');
+  function showMaintenanceStatus(st) {
+    if (!st) return;
+    if (maintenanceStatusEl) {
+      maintenanceStatusEl.textContent = st.active
+        ? 'Window open — about ' + st.minutes_left + ' min left (started by ' + (st.started_by || 'unknown') + '). The anomaly layer is not learning; alerts are marked, not hidden.'
+        : 'No maintenance window open.';
+    }
+    const startBtn = document.getElementById('btn-maintenance-start');
+    const stopBtn = document.getElementById('btn-maintenance-stop');
+    if (startBtn) startBtn.disabled = !!st.active;
+    if (stopBtn) stopBtn.disabled = !st.active;
+  }
+  document.getElementById('btn-maintenance-start').addEventListener('click', async () => {
+    const sel = document.getElementById('maintenance-minutes');
+    const minutes = sel ? parseInt(sel.value, 10) || 60 : 60;
+    try { showMaintenanceStatus(await invoke('start_maintenance', { minutes })); } catch (err) {}
+    loadBacklog();
+  });
+  document.getElementById('btn-maintenance-stop').addEventListener('click', async () => {
+    try { showMaintenanceStatus(await invoke('stop_maintenance')); } catch (err) {}
+    loadBacklog();
+  });
+
   loadCaptureInterfaces();
 
   // ---- canary PLC -----------------------------------------------------
@@ -1101,7 +1143,7 @@
   const bellCount = document.getElementById('alert-panel-count');
   function updateAlertBell(recent) {
     latestAlerts = (recent || []).filter((e) => e.kind === 'alert').slice(0, 8);
-    const unseen = (recent || []).filter((e) => e.kind === 'alert' && e.timestamp > alertsSeenTs).length;
+    const unseen = (recent || []).filter((e) => e.kind === 'alert' && e.timestamp > alertsSeenTs && !e.summary.startsWith('Maintenance window: ')).length;
     if (bellBadge) {
       bellBadge.hidden = unseen === 0;
       bellBadge.textContent = unseen > 99 ? '99+' : String(unseen);
@@ -1184,11 +1226,12 @@
       // The bell, the latest-alert line and the storyboard fallback all
       // read from here: alerts live in the store, and the last-100
       // event window goes stale the moment routine traffic buries them.
-      const latestAlert = alerts[0] || null;
+      const latestAlert = alerts.find((a) => !a.summary.startsWith('Maintenance window: ')) || null;
       window._latestAlert = latestAlert;
       updateAlertBell(alerts);
       try { showCaptureStatus(await invoke('capture_status')); } catch (err) { /* capture status is best-effort */ }
       try { showCanaryStatus(await invoke('canary_status')); } catch (err) { /* canary status is best-effort */ }
+      try { showMaintenanceStatus(await invoke('maintenance_status')); } catch (err) { /* window status is best-effort */ }
       const stateEl = document.getElementById('ov-state');
       const state = anomaly.risk_score >= 50 || rules.alerts_total > 0
         ? 'Needs attention' : anomaly.learning ? 'Learning' : 'Quiet';

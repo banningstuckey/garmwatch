@@ -46,7 +46,7 @@
     <img id="splash-logo" src="./assets/deadband-logo.jpg" alt="Deadband"
          onerror="var s=document.getElementById('splash'); if(s) s.remove();">
     <p class="splash-sub">Real-time passive OT network monitor</p>
-    <p class="splash-version" id="splash-version">Deadband v0.1.14</p>
+    <p class="splash-version" id="splash-version">Deadband v0.1.15</p>
   </div>
   <div class="shell">
     <nmui-navigation rail expanded id="rail">
@@ -470,19 +470,29 @@
           ~1&nbsp;GB plus several GB per model, with its own installer),
           so it installs once, outside Deadband:</p>
           <ol class="dim">
-            <li>Download and install it from
-              <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com/download</a>
-              (macOS, Windows, or Linux).</li>
-            <li>In a terminal, pull a model: <code>ollama pull llama3</code>
-              — the small general model Deadband is tuned for.</li>
-            <li>Come back here and hit Recheck. Ollama starts itself on
-              login; Deadband finds it at 127.0.0.1:11434.</li>
+            <li>Install Ollama (free, about a minute) — the button below
+              opens its download page in your browser.</li>
+            <li>Download a model right here — when Ollama is running, a
+              download button appears below and fetches it for you. No
+              terminal needed. (The terminal way still works too:
+              <code>ollama pull llama3</code>.)</li>
+            <li>That's it. Ollama starts itself on login, and Deadband
+              finds it at 127.0.0.1:11434.</li>
           </ol>
           <p class="dim">Deadband works fully without it — the analyst and
           the AI query toggle just stay quiet until a model is there.
           Full steps live in <code>docs/setup-ai.md</code> in the repo.</p>
           <div class="card-actions">
+            <nmui-button tonal id="ai-get-ollama">Get Ollama — ollama.com/download</nmui-button>
             <nmui-button tonal id="ai-recheck">Recheck</nmui-button>
+          </div>
+          <div id="ai-pull-row" hidden>
+            <p>Ollama is installed and running — it just needs a model.
+            This is the small general model Deadband is tuned for:</p>
+            <div class="card-actions">
+              <nmui-button filled id="ai-pull-btn">Download llama3 (~4.7 GB)</nmui-button>
+            </div>
+            <p id="ai-pull-status" class="sim-status"></p>
           </div>
         </nmui-card>
 
@@ -511,7 +521,7 @@
         </nmui-card>
       </section>
 
-      <footer class="note">Deadband v0.1.14 · UI: nmui v0.43.7, vendored and pinned (ui/vendor/nmui) · Themes selectable in Settings</footer>
+      <footer class="note">Deadband v0.1.15 · UI: nmui v0.43.7, vendored and pinned (ui/vendor/nmui) · Themes selectable in Settings</footer>
     </main>
   </div>
 
@@ -1743,12 +1753,47 @@
       aiStatusEl.textContent = a.reachable
         ? 'Ollama is running. ' + (a.models.length
             ? 'Models installed: ' + a.models.join(', ') + '.'
-            : 'No models installed yet — run: ollama pull llama3')
+            : 'No models installed yet — download one with the button below; no terminal needed.')
         : 'No local model detected (Ollama not running at 127.0.0.1:11434). ' +
-          'Deadband works fully without it — install it from ollama.com/download and pull a model when you want the analyst and the AI query toggle.';
+          'Deadband works fully without it — get Ollama with the button below when you want the analyst and the AI query toggle.';
+      const pullRow = document.getElementById('ai-pull-row');
+      if (pullRow) pullRow.hidden = !(a.reachable && a.models.length === 0);
     } catch (err) { /* AI card is best-effort */ }
   }
   if (aiRecheckBtn) aiRecheckBtn.addEventListener('click', loadAiCard);
+  const aiGetBtn = document.getElementById('ai-get-ollama');
+  if (aiGetBtn) aiGetBtn.addEventListener('click', async () => {
+    try { await invoke('open_external', { url: 'https://ollama.com/download' }); }
+    catch (err) { aiStatusEl.textContent = 'Could not open the browser — go to ollama.com/download yourself to get Ollama.'; }
+  });
+  const aiPullBtn = document.getElementById('ai-pull-btn');
+  const aiPullStatus = document.getElementById('ai-pull-status');
+  let aiPulling = false;
+  if (listen) {
+    listen('model_pull_progress', (e) => {
+      const p = (e && e.payload) || {};
+      if (aiPullStatus && aiPulling) {
+        aiPullStatus.textContent = 'Downloading llama3 — ' + (p.status || 'working') +
+          (p.percent != null ? ' · ' + p.percent + '%' : '') + '…';
+      }
+    }).catch(() => {});
+  }
+  if (aiPullBtn) aiPullBtn.addEventListener('click', async () => {
+    if (aiPulling || !invoke) return;
+    aiPulling = true;
+    aiPullBtn.toggleAttribute('disabled', true);
+    if (aiPullStatus) aiPullStatus.textContent = 'Starting the download…';
+    try {
+      const model = await invoke('pull_model', { model: 'llama3' });
+      if (aiPullStatus) aiPullStatus.textContent = 'Done — ' + model + ' is installed. The analyst is ready.';
+      analystModelsLoaded = false;
+      loadAnalyst();
+    } catch (err) {
+      if (aiPullStatus) aiPullStatus.textContent = 'The download did not finish: ' + err;
+    }
+    aiPulling = false;
+    aiPullBtn.toggleAttribute('disabled', false);
+  });
 
   async function loadAnalyst() {
     if (!invoke) return;

@@ -166,6 +166,60 @@ pub fn json_escape(text: &str) -> String {
     out
 }
 
+/// One progress update from Ollama's model-pull stream.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PullProgress {
+    /// Ollama's status text for the step ("downloading…",
+    /// "verifying sha256 digest", "success", …).
+    pub status: String,
+    /// Download percentage when the line carries byte counts.
+    pub percent: Option<u8>,
+    /// The error text when the pull failed.
+    pub error: Option<String>,
+}
+
+/// The Ollama `/api/pull` request body (streaming, so the shell
+/// can report progress during a multi-GB download).
+pub fn ollama_pull_body(model: &str) -> String {
+    format!("{{\"name\":\"{}\",\"stream\":true}}", json_escape(model))
+}
+
+/// Extracts a `"key":"value"` string field from a flat JSON line.
+fn pull_str_field(line: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{key}\":\"");
+    let start = line.find(&needle)? + needle.len();
+    let end = line[start..].find('"')? + start;
+    Some(line[start..end].to_string())
+}
+
+/// Extracts a `"key":123` number field from a flat JSON line.
+fn pull_num_field(line: &str, key: &str) -> Option<u64> {
+    let needle = format!("\"{key}\":");
+    let start = line.find(&needle)? + needle.len();
+    let digits: String = line[start..].chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse().ok()
+}
+
+/// Parses one line of Ollama's pull stream. Returns None for
+/// lines that carry no status (blank lines, framing noise).
+pub fn parse_pull_line(line: &str) -> Option<PullProgress> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+    if let Some(error) = pull_str_field(line, "error") {
+        return Some(PullProgress { status: "error".to_string(), percent: None, error: Some(error) });
+    }
+    let status = pull_str_field(line, "status")?;
+    let percent = match (pull_num_field(line, "total"), pull_num_field(line, "completed")) {
+        (Some(total), Some(completed)) if total > 0 => {
+            Some(((completed.saturating_mul(100) / total).min(100)) as u8)
+        }
+        _ => None,
+    };
+    Some(PullProgress { status, percent, error: None })
+}
+
 /// The Ollama `/api/chat` request body (non-streaming).
 pub fn ollama_chat_body(model: &str, prompt: &str) -> String {
     format!(
@@ -332,5 +386,40 @@ mod tests {
         assert!(ctx.alert_summary.contains("[new-device]"));
         let narrative = explain_incident(&MockAnalyst, &ctx).unwrap();
         assert!(narrative.contains("MOCK BRIEF"));
+    }
+}
+
+#[cfg(test)]
+mod pull_tests {
+    use super::*;
+
+    #[test]
+    fn pull_body_names_the_model_and_streams() {
+        let body = ollama_pull_body("llama3");
+        assert!(body.contains("\"name\":\"llama3\""), "{body}");
+        assert!(body.contains("\"stream\":true"), "{body}");
+    }
+
+    #[test]
+    fn pull_progress_reads_byte_counts() {
+        let p = parse_pull_line(
+            "{\"status\":\"downloading sha256:abc\",\"digest\":\"sha256:abc\",\"total\":1000,\"completed\":430}",
+        )
+        .expect("progress line");
+        assert_eq!(p.percent, Some(43));
+        assert!(p.status.contains("downloading"));
+        assert!(p.error.is_none());
+    }
+
+    #[test]
+    fn pull_progress_handles_status_only_success_and_error() {
+        let p = parse_pull_line("{\"status\":\"pulling manifest\"}").expect("status line");
+        assert_eq!(p.percent, None);
+        let done = parse_pull_line("{\"status\":\"success\"}").expect("success line");
+        assert_eq!(done.status, "success");
+        let err = parse_pull_line("{\"error\":\"model 'nope' not found\"}").expect("error line");
+        assert_eq!(err.error.as_deref(), Some("model 'nope' not found"));
+        assert!(parse_pull_line("   ").is_none());
+        assert!(parse_pull_line("not json").is_none());
     }
 }

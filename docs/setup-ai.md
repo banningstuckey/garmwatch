@@ -27,15 +27,20 @@ card with the same steps and a Recheck button.
 
 ## Install
 
-1. Download and install Ollama from <https://ollama.com/download>
-   (macOS, Windows, or Linux). On Linux the same page offers the
-   one-line install:
-   `curl -fsSL https://ollama.com/install.sh | sh`
-2. Pull a model. Deadband is tuned for the small general model
-   `llama3` (the one the analyst was built and tested against):
-   `ollama pull llama3`
-   A larger alternative is `ollama pull llama3.1:8b` (8 GB, slower,
-   better prose). Pick one in Settings → Preferred analyst model;
+1. In Deadband → Settings → Local AI (Ollama), press **Get Ollama**
+   — it opens <https://ollama.com/download> in your browser
+   (macOS, Windows, or Linux). Install it like any other app.
+   (On Linux the same page offers the one-line install:
+   `curl -fsSL https://ollama.com/install.sh | sh`.)
+2. Come back to the same card. Once Ollama is running, Deadband
+   offers **Download llama3 (~4.7 GB)** right in the card — one
+   click, live progress, no terminal. `llama3` is the small
+   general model Deadband is tuned for (the one the analyst was
+   built and tested against).
+   The terminal way still works if you prefer it:
+   `ollama pull llama3`. A larger alternative is
+   `llama3.1:8b` (8 GB, slower, better prose) — pull it in a
+   terminal, then pick it in Settings → Preferred analyst model;
    "First available" just takes whatever is installed.
 3. Ollama starts itself on login. Open Deadband → Settings → Local
    AI → Recheck. It should report "Ollama is running" and list your

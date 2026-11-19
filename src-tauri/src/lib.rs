@@ -1155,7 +1155,7 @@ async fn explain_triage(
                 .and_then(|text| deadband_core::analyst::ollama_model_names(&text).into_iter().next())
         });
         let Some(model) = chosen else {
-            return Err("No local model available — is Ollama running with a model pulled?".to_string());
+            return Err("No local model available yet — set one up in Settings \u{2192} Local AI (Ollama); once Ollama is installed, Deadband can download the recommended model for you.".to_string());
         };
         let prompt = {
             let store = store.lock().map_err(|_| "store lock poisoned".to_string())?;
@@ -1182,6 +1182,196 @@ async fn explain_triage(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+// ---- AI setup smoothing: browser links + in-app model download ----
+// Ollama itself is a separate install (its own ~1 GB app), but
+// everything after that install should be one click inside
+// Deadband — nobody should need a terminal to fetch a model.
+
+/// One model-pull progress update for the UI.
+#[derive(Clone, Serialize)]
+struct PullProgressDto {
+    status: String,
+    percent: Option<u8>,
+}
+
+/// Opens a link in the system browser. Allowlisted to Ollama's
+/// site — this command exists so the setup card's link actually
+/// opens a browser from inside the app window, and it will not be
+/// used as a general "open anything" door.
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    if !(url == "https://ollama.com" || url.starts_with("https://ollama.com/")) {
+        return Err("that link is not one Deadband opens".to_string());
+    }
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("open");
+        c.arg(&url);
+        c
+    };
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/C", "start", "", &url]);
+        c
+    };
+    #[cfg(target_os = "linux")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("xdg-open");
+        c.arg(&url);
+        c
+    };
+    cmd.spawn()
+        .map(|_| ())
+        .map_err(|e| format!("could not open the browser ({e})"))
+}
+
+/// Streams a model pull from the local Ollama, emitting
+/// "model_pull_progress" events as its NDJSON lines arrive.
+/// Returns the model name once Ollama reports success.
+fn pull_model_stream(app: &tauri::AppHandle, model: &str) -> Result<String, String> {
+    use std::io::{Read, Write};
+    let addr: std::net::SocketAddr = "127.0.0.1:11434".parse().expect("static addr");
+    let mut stream = std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(10))
+        .map_err(|e| format!("cannot reach Ollama at 127.0.0.1:11434 ({e}) — is it installed and running?"))?;
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(180)));
+    let payload = deadband_core::analyst::ollama_pull_body(model);
+    let request = format!(
+        "POST /api/pull HTTP/1.1\r\nHost: 127.0.0.1:11434\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+        payload.len()
+    );
+    stream.write_all(request.as_bytes()).map_err(|e| e.to_string())?;
+
+    // Headers first.
+    let mut raw: Vec<u8> = Vec::new();
+    let mut byte = [0u8; 1];
+    let header_end = loop {
+        match stream.read(&mut byte) {
+            Ok(0) => return Err("Ollama closed the connection before answering".to_string()),
+            Ok(_) => {
+                raw.push(byte[0]);
+                if raw.len() >= 4 && &raw[raw.len() - 4..] == b"\r\n\r\n" {
+                    break raw.len();
+                }
+                if raw.len() > 16384 {
+                    return Err("Ollama's answer had no readable headers".to_string());
+                }
+            }
+            Err(e) => return Err(format!("reading from Ollama failed ({e})")),
+        }
+    };
+    let head = String::from_utf8_lossy(&raw[..header_end]).into_owned();
+    let status_line = head.lines().next().unwrap_or("").to_string();
+    if !status_line.contains(" 200") {
+        return Err(format!("Ollama answered: {status_line}"));
+    }
+    let chunked = head.to_ascii_lowercase().contains("transfer-encoding: chunked");
+
+    // Body: incremental chunked decode (or plain accumulation),
+    // NDJSON lines processed as they complete.
+    let mut pending: Vec<u8> = raw[header_end..].to_vec();
+    let mut text = String::new();
+    let mut chunk_need: Option<usize> = None;
+    let mut chunks_done = false;
+    let mut succeeded = false;
+    let mut last_emit: (String, Option<u8>) = (String::new(), None);
+    let mut buf = [0u8; 8192];
+    loop {
+        // Drain everything complete that's already buffered.
+        loop {
+            if chunked {
+                match chunk_need {
+                    None => {
+                        if chunks_done {
+                            // Only trailers remain; they carry nothing.
+                            pending.clear();
+                            break;
+                        }
+                        let Some(nl) = find_subslice(&pending, b"\r\n") else { break };
+                        let size_text = String::from_utf8_lossy(&pending[..nl]).into_owned();
+                        let size = usize::from_str_radix(size_text.trim().split(';').next().unwrap_or(""), 16)
+                            .map_err(|_| "Ollama sent unreadable download framing".to_string())?;
+                        pending.drain(..nl + 2);
+                        if size == 0 {
+                            chunks_done = true;
+                            break;
+                        }
+                        chunk_need = Some(size + 2);
+                    }
+                    Some(need) => {
+                        if pending.len() < need {
+                            break;
+                        }
+                        let data: Vec<u8> = pending.drain(..need).collect();
+                        text.push_str(&String::from_utf8_lossy(&data[..need - 2]));
+                        chunk_need = None;
+                    }
+                }
+            } else if !pending.is_empty() {
+                text.push_str(&String::from_utf8_lossy(&pending));
+                pending.clear();
+            } else {
+                break;
+            }
+        }
+        // Process complete lines.
+        while let Some(nl) = text.find('\n') {
+            let line: String = text.drain(..=nl).collect();
+            if let Some(progress) = deadband_core::analyst::parse_pull_line(&line) {
+                if let Some(error) = &progress.error {
+                    return Err(format!("Ollama could not download the model: {error}"));
+                }
+                if progress.status == "success" {
+                    succeeded = true;
+                }
+                let key = (progress.status.clone(), progress.percent);
+                if key != last_emit {
+                    last_emit = key;
+                    let _ = app.emit(
+                        "model_pull_progress",
+                        PullProgressDto { status: progress.status.clone(), percent: progress.percent },
+                    );
+                }
+            }
+        }
+        if succeeded {
+            return Ok(model.to_string());
+        }
+        match stream.read(&mut buf) {
+            Ok(0) => break, // EOF
+            Ok(n) => pending.extend_from_slice(&buf[..n]),
+            Err(e) => return Err(format!("the model download stalled ({e}) — check Ollama is still running, then try again")),
+        }
+    }
+    // A final unterminated line may still carry the verdict.
+    if let Some(progress) = deadband_core::analyst::parse_pull_line(&text) {
+        if let Some(error) = &progress.error {
+            return Err(format!("Ollama could not download the model: {error}"));
+        }
+        if progress.status == "success" {
+            return Ok(model.to_string());
+        }
+    }
+    Err("the model download ended before it finished — check Ollama is still running, then try again".to_string())
+}
+
+/// Finds a byte subslice (small helper for the pull stream).
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+/// Downloads a model through the local Ollama with live progress
+/// — the no-terminal path from "Ollama installed" to "analyst on".
+#[tauri::command]
+async fn pull_model(app: tauri::AppHandle, model: Option<String>) -> Result<String, String> {
+    let model = model
+        .filter(|m| !m.trim().is_empty())
+        .unwrap_or_else(|| "llama3".to_string());
+    tauri::async_runtime::spawn_blocking(move || pull_model_stream(&app, &model))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 // ---- canary PLC (feature program, item 3) ---------------------------
@@ -1558,7 +1748,8 @@ fn analyst_status() -> AnalystStatusDto {
             reachable: false,
             models: Vec::new(),
             message: "No local model detected (Ollama not running at 127.0.0.1:11434). \
-                      Deadband works fully without it — the analyst is optional."
+                      Deadband works fully without it — the analyst is optional. \
+                      Set it up in Settings \u{2192} Local AI (Ollama)."
                 .to_string(),
         },
     }
@@ -1595,7 +1786,7 @@ async fn explain_latest_alert(
                 .and_then(|text| deadband_core::analyst::ollama_model_names(&text).into_iter().next())
         });
         let Some(model) = chosen else {
-            return Err("No local model available — is Ollama running with a model pulled?".to_string());
+            return Err("No local model available yet — set one up in Settings \u{2192} Local AI (Ollama); once Ollama is installed, Deadband can download the recommended model for you.".to_string());
         };
         let alert_summary = {
             let store = store.lock().map_err(|_| "store lock poisoned".to_string())?;
@@ -1977,7 +2168,9 @@ pub fn run() {
             quarantine_actor,
             release_actor,
             daily_triage,
-            explain_triage
+            explain_triage,
+            open_external,
+            pull_model
         ])
         .run(tauri::generate_context!())
         .expect("error while running Deadband");

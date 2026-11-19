@@ -46,7 +46,7 @@
     <img id="splash-logo" src="./assets/deadband-logo.jpg" alt="Deadband"
          onerror="var s=document.getElementById('splash'); if(s) s.remove();">
     <p class="splash-sub">Real-time passive OT network monitor</p>
-    <p class="splash-version" id="splash-version">Deadband v0.1.12</p>
+    <p class="splash-version" id="splash-version">Deadband v0.1.13</p>
   </div>
   <div class="shell">
     <nmui-navigation rail expanded id="rail">
@@ -348,7 +348,7 @@
             <p class="dim" id="assets-empty">No devices yet — run the simulation or replay a capture.</p>
             <table class="assets-table" id="assets-table" hidden>
               <thead>
-                <tr><th>IP</th><th>Label</th><th>Role</th><th>Purdue level</th><th>First seen</th><th>Last seen</th><th>Suggested placement</th></tr>
+                <tr><th>IP</th><th>Label</th><th>Role</th><th>Purdue level</th><th>First seen</th><th>Last seen</th><th>Suspicion</th><th>Suggested placement</th></tr>
               </thead>
               <tbody id="assets-body"></tbody>
             </table>
@@ -500,7 +500,7 @@
         </nmui-card>
       </section>
 
-      <footer class="note">Deadband v0.1.12 · UI: nmui v0.43.7, vendored and pinned (ui/vendor/nmui) · Themes selectable in Settings</footer>
+      <footer class="note">Deadband v0.1.13 · UI: nmui v0.43.7, vendored and pinned (ui/vendor/nmui) · Themes selectable in Settings</footer>
     </main>
   </div>
 
@@ -1978,6 +1978,19 @@
         td.textContent = text;
         tr.appendChild(td);
       });
+      const suspTd = document.createElement('td');
+      const chip = document.createElement('span');
+      const score = d.suspicion || 0;
+      chip.className = 'suspicion-chip susp-' + (score >= 75 ? 'red' : score >= 50 ? 'orange' : score >= 25 ? 'yellow' : 'green');
+      chip.textContent = score + '%';
+      suspTd.appendChild(chip);
+      if (d.quarantined) {
+        const badge = document.createElement('span');
+        badge.className = 'quarantine-badge';
+        badge.textContent = 'QUARANTINED';
+        suspTd.appendChild(badge);
+      }
+      tr.appendChild(suspTd);
       const suggTd = document.createElement('td');
       const sugg = (window._placements || new Map()).get(d.ip);
       if (sugg && !d.level_name) {
@@ -2048,13 +2061,72 @@
         esc((c.src_ip === ip ? '→ ' + c.dst_ip : '← ' + c.src_ip) + ':' + c.dst_port +
         ' (' + c.protocol + ', ' + c.packet_count + ' pkts)')).join(' · ') + '</p>';
     }
+    body += '<div class="detail-actor" data-actor-for="' + esc(ip) + '"><p class="dim">Suspicion: checking…</p></div>';
     body += '<div class="detail-profile" data-profile-for="' + esc(ip) + '"><p class="dim">Behavior profile: checking the recording…</p></div>';
     body += detailItemsHtml(await recentFor((e) => e.src_ip === ip || e.dst_ip === ip));
     body += '<button class="chip-btn" data-log-device="' + esc(JSON.stringify([ip])) +
       '" data-log-label="' + esc(d.label || ip) + '">View in Events log →</button>';
     showDetail('Device — ' + (d.label || ip), body);
+    fillActorDetail(ip);
     fillDeviceProfile(ip);
   }
+
+  // Suspicion: the score, the why, and the human actions — Ignore
+  // (a judgment factored into the score, never a mute) and
+  // Quarantine (human-confirmed; Release when held). Rendered from
+  // the shell's actor DTO; the buttons are handled by one delegated
+  // listener, like the log drill-down.
+  function renderActorDetail(el, dto) {
+    if (!dto) {
+      el.innerHTML = '<p class="dim">Suspicion: unavailable.</p>';
+      return;
+    }
+    let html = '<p>Suspicion: <span class="suspicion-chip susp-' + dto.band + '">' + dto.score + '%</span>' +
+      (dto.quarantined ? ' <span class="quarantine-badge">QUARANTINED</span>' : '') + '</p>';
+    if (dto.factors.length) {
+      html += '<ul class="detail-events">' + dto.factors.map((f) =>
+        '<li>' + esc(f.text) + (f.points > 0 ? ' (+' + f.points + ')' : f.points < 0 ? ' (' + f.points + ')' : '') + '</li>').join('') + '</ul>';
+    } else {
+      html += '<p class="dim">Nothing against this actor in the last day.</p>';
+    }
+    html += '<p class="actor-actions">';
+    if (dto.quarantined) {
+      html += '<button class="chip-btn" data-actor-action="release" data-actor-ip="' + esc(dto.ip) + '">Release from quarantine</button>';
+    } else {
+      html += '<button class="chip-btn" data-actor-action="ignore" data-actor-ip="' + esc(dto.ip) + '">Ignore</button> ' +
+        '<button class="chip-btn" data-actor-action="quarantine" data-actor-ip="' + esc(dto.ip) + '">Quarantine</button>';
+    }
+    html += '</p>';
+    if (dto.action_sheet) {
+      html += '<pre class="action-sheet">' + esc(dto.action_sheet) + '</pre>';
+    }
+    el.innerHTML = html;
+  }
+  async function fillActorDetail(ip) {
+    let dto = null;
+    try { dto = await invoke('actor_detail', { ip }); } catch (err) {}
+    document.querySelectorAll('.detail-actor').forEach((el) => {
+      if (el.getAttribute('data-actor-for') === ip) renderActorDetail(el, dto);
+    });
+  }
+  document.addEventListener('click', async (e) => {
+    const b = e.target && e.target.closest ? e.target.closest('[data-actor-action]') : null;
+    if (!b) return;
+    const ip = b.dataset.actorIp;
+    const action = b.dataset.actorAction;
+    if (action === 'quarantine' && !b.dataset.armed) {
+      b.dataset.armed = '1';
+      b.textContent = 'Confirm quarantine?';
+      return;
+    }
+    const cmd = action === 'ignore' ? 'ignore_actor' : action === 'quarantine' ? 'quarantine_actor' : 'release_actor';
+    let dto = null;
+    try { dto = await invoke(cmd, { ip }); } catch (err) {}
+    document.querySelectorAll('.detail-actor').forEach((el) => {
+      if (el.getAttribute('data-actor-for') === ip) renderActorDetail(el, dto);
+    });
+    loadBacklog();
+  });
 
   // Behavior recording: what this device actually answers — the
   // values it returns, its function mix, its polling rhythm. This

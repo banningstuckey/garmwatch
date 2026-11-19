@@ -136,6 +136,12 @@ impl Store {
                 clients         TEXT NOT NULL DEFAULT ''
             );
 
+            CREATE TABLE IF NOT EXISTS quarantine (
+                ip      TEXT PRIMARY KEY,
+                by_user TEXT NOT NULL,
+                at_s    INTEGER NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS profile_registers (
                 ip       TEXT NOT NULL,
                 function INTEGER NOT NULL,
@@ -225,7 +231,7 @@ impl Store {
     pub fn clear_all(&self) -> Result<()> {
         self.conn.execute_batch(
             "DELETE FROM events; DELETE FROM connections; DELETE FROM devices;
-             DELETE FROM profile_devices; DELETE FROM profile_registers;",
+             DELETE FROM profile_devices; DELETE FROM profile_registers; DELETE FROM quarantine;",
         )?;
         self.profiles.borrow_mut().clear();
         self.profile_dirty.borrow_mut().clear();
@@ -585,6 +591,67 @@ impl Store {
             events.push(event?);
         }
         Ok(events)
+    }
+
+    /// Events at or after `since_s`, newest first, capped at
+    /// `limit` — the suspicion score's raw material.
+    pub fn events_since(&self, since_s: i64, limit: i64) -> Result<Vec<Event>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, timestamp, kind, src_ip, dst_ip, summary
+             FROM events WHERE timestamp >= ?1 ORDER BY id DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![since_s, limit], |row| {
+            let kind_text: String = row.get(2)?;
+            let src_text: Option<String> = row.get(3)?;
+            let dst_text: Option<String> = row.get(4)?;
+            Ok(Event {
+                id: row.get(0)?,
+                timestamp: row.get(1)?,
+                kind: kind_from_tag(&kind_text),
+                src_ip: src_text.as_deref().and_then(|text| text.parse().ok()),
+                dst_ip: dst_text.as_deref().and_then(|text| text.parse().ok()),
+                summary: row.get(5)?,
+            })
+        })?;
+        let mut events = Vec::new();
+        for event in rows {
+            events.push(event?);
+        }
+        Ok(events)
+    }
+
+    // ---- quarantine state (feature program) ----------------------
+
+    /// Marks a device quarantined, with who ordered it and when.
+    pub fn set_quarantined(&self, ip: IpAddr, by_user: &str, at_s: i64) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO quarantine (ip, by_user, at_s) VALUES (?1, ?2, ?3)
+             ON CONFLICT(ip) DO UPDATE SET by_user = excluded.by_user, at_s = excluded.at_s",
+            params![ip.to_string(), by_user, at_s],
+        )?;
+        Ok(())
+    }
+
+    /// Releases a device from quarantine.
+    pub fn clear_quarantined(&self, ip: IpAddr) -> Result<()> {
+        self.conn.execute("DELETE FROM quarantine WHERE ip = ?1", params![ip.to_string()])?;
+        Ok(())
+    }
+
+    /// Every quarantined device: ip → (who ordered it, when).
+    pub fn quarantined(&self) -> Result<std::collections::HashMap<IpAddr, (String, i64)>> {
+        let mut stmt = self.conn.prepare("SELECT ip, by_user, at_s FROM quarantine")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
+        })?;
+        let mut out = std::collections::HashMap::new();
+        for row in rows {
+            let (ip, user, at_s) = row?;
+            if let Ok(ip) = ip.parse::<IpAddr>() {
+                out.insert(ip, (user, at_s));
+            }
+        }
+        Ok(out)
     }
 
     /// The most recent events, newest first (the UI's initial backlog).

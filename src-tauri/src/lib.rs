@@ -876,6 +876,181 @@ fn device_profile(state: tauri::State<AppState>, ip: String) -> Option<ProfileDt
     })
 }
 
+// ---- actor suspicion + actions (feature program) ------------------
+// Every actor carries an explainable suspicion score (see core
+// suspicion.rs). The detail views show the score, the why, and the
+// two human actions: Ignore (a judgment factored into the score —
+// never a mute) and Quarantine (a human-confirmed order; Deadband
+// marks, escalates, and prepares the action sheet — the physical
+// move is the network gear's step). Every action is an operator
+// event in the audit log, with who did it.
+
+/// One factor behind a score, for the why-panel.
+#[derive(Debug, Serialize)]
+struct FactorDto {
+    text: String,
+    points: i32,
+}
+
+/// One actor's full detail: score, why, state, and (when held) the
+/// quarantine action sheet.
+#[derive(Debug, Serialize)]
+struct ActorDto {
+    ip: String,
+    score: i32,
+    band: String,
+    factors: Vec<FactorDto>,
+    quarantined: bool,
+    quarantine_by: Option<String>,
+    action_sheet: Option<String>,
+}
+
+/// The color band a score falls in — green for a good actor,
+/// sliding through yellow and orange to red.
+fn band_of(score: i32) -> &'static str {
+    match score {
+        0..=24 => "green",
+        25..=49 => "yellow",
+        50..=74 => "orange",
+        _ => "red",
+    }
+}
+
+/// Builds an actor's detail from the store.
+fn actor_detail_of(store: &Store, ip: std::net::IpAddr) -> ActorDto {
+    let now_s = now_ms() / 1000;
+    let events = store
+        .events_since(now_s - deadband_core::suspicion::WINDOW_S, 5000)
+        .unwrap_or_default();
+    let quarantined = store.quarantined().unwrap_or_default();
+    let suspicion = deadband_core::suspicion::compute(&events, &quarantined, ip, now_s);
+    let held = quarantined.get(&ip);
+    ActorDto {
+        ip: ip.to_string(),
+        score: suspicion.score,
+        band: band_of(suspicion.score).to_string(),
+        factors: suspicion
+            .factors
+            .iter()
+            .map(|(text, points)| FactorDto { text: text.clone(), points: *points })
+            .collect(),
+        quarantined: held.is_some(),
+        quarantine_by: held.map(|(user, _)| user.clone()),
+        action_sheet: held.map(|(user, at_s)| {
+            build_action_sheet(store, ip, &suspicion, user, *at_s)
+        }),
+    }
+}
+
+/// The one-page hand-off for the operator's network gear: what the
+/// device is, why it was held, what Deadband has and has not done,
+/// and the exact isolation steps for a human to apply.
+fn build_action_sheet(
+    store: &Store,
+    ip: std::net::IpAddr,
+    suspicion: &deadband_core::suspicion::Suspicion,
+    ordered_by: &str,
+    at_s: i64,
+) -> String {
+    let device = store.list_devices().unwrap_or_default().into_iter().find(|d| d.ip == ip);
+    let (label, role, level, mac) = match &device {
+        Some(d) => (
+            d.label.clone().unwrap_or_else(|| "—".to_string()),
+            d.role.as_tag().to_string(),
+            d.level.map(|l| l.name().to_string()).unwrap_or_else(|| "unplaced".to_string()),
+            d.mac.clone().unwrap_or_else(|| "—".to_string()),
+        ),
+        None => ("—".to_string(), "unknown".to_string(), "unplaced".to_string(), "—".to_string()),
+    };
+    let mut sheet = format!(
+        "QUARANTINE ACTION SHEET — {ip}\n\
+         Device: {label} · role {role} · {level} · MAC {mac}\n\
+         Ordered by: {ordered_by} (at unix {at_s}) · Suspicion: {}%\n\n\
+         Why:\n",
+        suspicion.score
+    );
+    for (text, points) in &suspicion.factors {
+        if *points > 0 {
+            sheet.push_str(&format!("  • {text} (+{points})\n"));
+        }
+    }
+    sheet.push_str(
+        "\nDeadband has: marked the device quarantined, held its suspicion at 90+, \
+         escalated its events, and logged this order with who made it.\n\
+         Deadband has NOT touched the network — it is a passive monitor. \
+         To physically isolate the device, on your gear:\n\
+         1. On the switch this device plugs into: shut its port, or move the port to the quarantine VLAN.\n\
+         2. Or on the firewall between its zone and the controllers: block all traffic from this IP to the Level 1/2 networks.\n\
+         3. Leave the device powered and connected to the quarantine segment if it is being held for the twin — do not wipe it; it is evidence.\n\
+         Release: the Release button in this device's detail in Deadband, once the investigation is done. The release is logged too.",
+    );
+    sheet
+}
+
+/// An actor's suspicion detail (score + why + state).
+#[tauri::command]
+fn actor_detail(state: tauri::State<AppState>, ip: String) -> Option<ActorDto> {
+    let addr: std::net::IpAddr = ip.parse().ok()?;
+    let store = state.store.lock().ok()?;
+    Some(actor_detail_of(&store, addr))
+}
+
+/// Ignore: a human judgment factored into the score — never a
+/// mute. Recorded in the audit log with who made it; later alerts
+/// count at full weight again.
+#[tauri::command]
+fn ignore_actor(app: tauri::AppHandle, state: tauri::State<AppState>, ip: String) -> Option<ActorDto> {
+    let addr: std::net::IpAddr = ip.parse().ok()?;
+    let user = os_user();
+    record_operator_event(
+        &app,
+        &state.store,
+        format!(
+            "Ignored actor {addr} — marked known/expected by {user}. Deadband keeps watching and recording it; the mark is factored into its suspicion score, and later alerts count at full weight."
+        ),
+    );
+    let store = state.store.lock().ok()?;
+    Some(actor_detail_of(&store, addr))
+}
+
+/// Quarantine: a human-confirmed order. Deadband marks the actor,
+/// holds its score, and prepares the action sheet; the physical
+/// move is the network gear's step, taken by a human.
+#[tauri::command]
+fn quarantine_actor(app: tauri::AppHandle, state: tauri::State<AppState>, ip: String) -> Option<ActorDto> {
+    let addr: std::net::IpAddr = ip.parse().ok()?;
+    let user = os_user();
+    if let Ok(store) = state.store.lock() {
+        let _ = store.set_quarantined(addr, &user, now_ms() / 1000);
+    }
+    record_operator_event(
+        &app,
+        &state.store,
+        format!(
+            "Quarantined actor {addr} — ordered by {user}. Deadband has marked it, held its suspicion, and prepared the action sheet; the physical move is the network gear's step."
+        ),
+    );
+    let store = state.store.lock().ok()?;
+    Some(actor_detail_of(&store, addr))
+}
+
+/// Release: returns a held actor to normal standing. Logged, like
+/// everything else.
+#[tauri::command]
+fn release_actor(app: tauri::AppHandle, state: tauri::State<AppState>, ip: String) -> Option<ActorDto> {
+    let addr: std::net::IpAddr = ip.parse().ok()?;
+    if let Ok(store) = state.store.lock() {
+        let _ = store.clear_quarantined(addr);
+    }
+    record_operator_event(
+        &app,
+        &state.store,
+        format!("Released actor {addr} from quarantine by {}.", os_user()),
+    );
+    let store = state.store.lock().ok()?;
+    Some(actor_detail_of(&store, addr))
+}
+
 // ---- canary PLC (feature program, item 3) ---------------------------
 // A fake controller that nothing legitimate ever talks to. Any touch
 // is an intruder by definition — no baseline, no false positives.
@@ -1482,6 +1657,10 @@ struct MapDeviceDto {
     level_name: Option<String>,
     first_seen: i64,
     last_seen: i64,
+    /// Per-actor suspicion, 0–100 (feature program).
+    suspicion: i32,
+    /// Held in quarantine by an operator's order.
+    quarantined: bool,
 }
 
 /// One conduit for the Purdue map, from the connection table.
@@ -1506,6 +1685,12 @@ struct NetworkSnapshot {
 fn network_snapshot(state: tauri::State<AppState>) -> NetworkSnapshot {
     let empty = NetworkSnapshot { devices: Vec::new(), connections: Vec::new() };
     let Ok(store) = state.store.lock() else { return empty };
+    let now_s = now_ms() / 1000;
+    let score_events = store
+        .events_since(now_s - deadband_core::suspicion::WINDOW_S, 5000)
+        .unwrap_or_default();
+    let quarantined = store.quarantined().unwrap_or_default();
+    let scores = deadband_core::suspicion::compute_all(&score_events, &quarantined, now_s);
     let devices = store
         .list_devices()
         .unwrap_or_default()
@@ -1518,6 +1703,8 @@ fn network_snapshot(state: tauri::State<AppState>) -> NetworkSnapshot {
             level_name: d.level.map(|l| l.name().to_string()),
             first_seen: d.first_seen,
             last_seen: d.last_seen,
+            suspicion: scores.get(&d.ip).map(|s| s.score).unwrap_or(0),
+            quarantined: quarantined.contains_key(&d.ip),
         })
         .collect();
     let connections = store
@@ -1651,7 +1838,11 @@ pub fn run() {
             start_maintenance,
             stop_maintenance,
             maintenance_status,
-            device_profile
+            device_profile,
+            actor_detail,
+            ignore_actor,
+            quarantine_actor,
+            release_actor
         ])
         .run(tauri::generate_context!())
         .expect("error while running Deadband");

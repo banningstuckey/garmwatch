@@ -2212,7 +2212,7 @@ fn audit_report(app: tauri::AppHandle, state: tauri::State<AppState>, days: u32)
     let events = store
         .events_since(from_s, 100_000)
         .map_err(|e| format!("could not read the trail: {e}"))?;
-    let quarantined = store.quarantined();
+    let quarantined = store.quarantined().unwrap_or_default();
     let report = deadband_core::evidence::build_report(&events, &quarantined, from_s, now_s);
     Ok(deadband_core::evidence::render_html(&report, &os_user()))
 }

@@ -260,10 +260,10 @@ nmui-menu > section > button > icon.check::before {
    one (menu) — the same pairing as nativemui.com, drawn locally. */
 nmui-navigation[rail][expanded] .rail-ic-closed { display: none; }
 nmui-navigation[rail][collapsed] .rail-ic-open { display: none; }
-nmui-navigation[rail][collapsed] .rail-wordmark,
+nmui-navigation[rail][collapsed] .rail-logo,
 nmui-navigation[rail][collapsed] .rail-wordmark-text { display: none; }
 nmui-navigation[rail][collapsed] .rail-brand-row { justify-content: center; }
-nmui-navigation[rail][collapsed] .rail-mark { margin-left: 0; }
+nmui-navigation[rail][collapsed] .rail-mark { display: block; margin-left: 0; width: 44px; height: 44px; }
 /* With icons, nmui's own collapsed pill governs: the 56x32 ::before
    takes the hover tint / selected container color, and the anchor
    stays 64px tall (icon in the pill, label below it). The old
@@ -313,30 +313,28 @@ ol.levels li span { color: var(--md-sys-color-on-surface-variant); }
 .setting-row .menu-field [trailing] { font-size: 18px; color: var(--md-sys-color-on-surface-variant); }
 
 .rail-brand-row { display: flex; align-items: center; gap: 4px; }
-/* The GarmWatch wolf mark ships on a transparent ground, so it
-   floats on the rail's own color on every theme. object-fit crops
-   the wide canvas down to the wolf itself at this small size. */
-.rail-mark { width: 34px; height: 34px; display: block; margin-left: 8px; object-fit: cover; }
-/* The GARMWATCH wordmark from the supplied text-only art, windowed
-   to its measured ink box (x 89–1974, y 485–784 of the 2048×1118
-   canvas) so the lettering fills the strip exactly. */
-.rail-wordmark {
-  width: 188px; height: 20px; flex: none;
-  background-image: url("./assets/garmwatch-wordmark.png");
-  background-size: 108.7% 374.5%;
-  background-position: 54.6% 59.2%;
-  background-repeat: no-repeat;
-}
+/* Menu branding (Banning, 2026-11-20): expanded menu shows the
+   full GarmWatch lockup; a collapsed menu shows only the wolf
+   mark. Light themes use mark + live text instead of the lockup —
+   its silver lettering washes out on a light rail. The mark ships
+   on a transparent ground; object-fit crops its wide canvas down
+   to the wolf itself at this small size. */
+.rail-logo { width: 216px; max-width: 100%; height: auto; display: block; margin-left: 4px; }
+.rail-mark { width: 34px; height: 34px; display: none; margin-left: 8px; object-fit: cover; }
 /* Light themes: the wordmark art's silver lettering washes out on
    a light rail, so light themes swap it for a live-text wordmark
    in the theme's own colors (same two-tone split as the art: GARM
    in the text color, WATCH in red). The transparent wolf mark
    reads fine on light, so it stays on every theme. */
 .rail-wordmark-text { display: none; }
-:root[theme="paper-white"] .rail-wordmark,
-:root[theme="daylight-steel"] .rail-wordmark,
-:root[theme="warm-light"] .rail-wordmark,
-:root[theme="contrast-paper"] .rail-wordmark { display: none; }
+:root[theme="paper-white"] .rail-logo,
+:root[theme="daylight-steel"] .rail-logo,
+:root[theme="warm-light"] .rail-logo,
+:root[theme="contrast-paper"] .rail-logo { display: none; }
+:root[theme="paper-white"] .rail-mark,
+:root[theme="daylight-steel"] .rail-mark,
+:root[theme="warm-light"] .rail-mark,
+:root[theme="contrast-paper"] .rail-mark { display: block; }
 :root[theme="paper-white"] .rail-wordmark-text,
 :root[theme="daylight-steel"] .rail-wordmark-text,
 :root[theme="warm-light"] .rail-wordmark-text,

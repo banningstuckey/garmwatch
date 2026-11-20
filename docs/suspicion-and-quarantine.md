@@ -25,7 +25,7 @@ event log over the last 24 hours:
 ## Ignore — a judgment, not a mute
 
 The **Ignore** button in the why-panel records a human judgment:
-"this actor is known and expected." It does **not** stop Deadband
+"this actor is known and expected." It does **not** stop GarmWatch
 watching or recording the actor, and it does not silence future
 alerts. What it does is factor into the equation: everything the
 actor did *before* the Ignore counts at half weight. Anything it
@@ -43,16 +43,16 @@ looks next.
 
 The **Quarantine** button (two clicks: the button arms, the second
 click confirms) is an operator's order, and the AI never makes it.
-On confirm, Deadband:
+On confirm, GarmWatch:
 
 - marks the actor quarantined (Assets badge, map detail, score
   held at 90+),
 - writes the order to the audit log with who made it,
 - and produces the **action sheet**: a one-page hand-off naming the
-  device, the evidence, what Deadband has and has *not* done, and
+  device, the evidence, what GarmWatch has and has *not* done, and
   the exact isolation steps for the operator's switch or firewall.
 
-Deadband is a passive monitor: it does not touch the network, so
+GarmWatch is a passive monitor: it does not touch the network, so
 the physical move — shutting the switch port, moving the actor to
 the quarantine VLAN, blocking it at the firewall — is a human step
 on the plant's gear, following the sheet. Where a quarantine

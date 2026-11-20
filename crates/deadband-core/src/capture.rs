@@ -1,7 +1,7 @@
 //! Live packet capture (Phase 7) and the blind check (capture health).
 //!
 //! The libpcap parts live behind the `live-capture` cargo feature: this
-//! VM has no system libpcap at all, so `cargo test -p deadband-core`
+//! VM has no system libpcap at all, so `cargo test -p garmwatch-core`
 //! must keep building without it. The health check is pure logic and
 //! is always compiled — and tested — here; the Mac build is the real
 //! check for the pcap calls.

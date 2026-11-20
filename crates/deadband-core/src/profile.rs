@@ -1,7 +1,7 @@
 //! Behavior recording — per-device response profiles, kept from
 //! day one (feature program, 2026-11-19).
 //!
-//! Deadband already stores events and connections. What it did not
+//! GarmWatch already stores events and connections. What it did not
 //! keep was how each device *answers*: the actual register values a
 //! Modbus server returns, which functions it answers, who polls it,
 //! and at what rhythm. That is recorded here, passively, from the

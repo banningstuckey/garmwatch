@@ -759,7 +759,7 @@ mod tests {
         // The twin's feedstock must survive restarts: record one
         // poll round trip, flush, reopen, and the profile — values
         // included — is still there.
-        let dir = std::env::temp_dir().join(format!("deadband-profile-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("garmwatch-profile-test-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("test.db");
         let _ = std::fs::remove_file(&path);

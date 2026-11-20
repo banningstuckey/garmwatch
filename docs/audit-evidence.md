@@ -1,13 +1,13 @@
 # Audit evidence — one click over the universal audit trail
 
 The Audit evidence card (Events view) builds a printable report
-from everything Deadband has recorded: the packet an auditor
+from everything GarmWatch has recorded: the packet an auditor
 (NERC CIP, IEC 62443), an insurer, or an investigator asks for
 after something happens.
 
 ## The universal audit trail
 
-Deadband records an **operator action** for every touch — and
+GarmWatch records an **operator action** for every touch — and
 every attempted touch that takes effect — in both directions:
 
 - **Network actors:** alerts, writes, discoveries, connection

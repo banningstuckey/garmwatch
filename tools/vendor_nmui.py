@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate Deadband's vendored nmui copy from an nmui checkout.
+"""Regenerate GarmWatch's vendored nmui copy from an nmui checkout.
 
 Usage: python3 tools/vendor_nmui.py /path/to/nmui
 
@@ -23,7 +23,7 @@ HEADER = re.compile(
     r'import \w+ from "\./[\w-]+\.css" with \{ type: "css" \};\n\n'
     r'if \(!document\.adoptedStyleSheets\.includes\(\w+\)\) \{\n'
     r'  document\.adoptedStyleSheets\.push\(\w+\);\n\}\n')
-NOTE = ("/* GENERATED for Deadband from nmui — do not hand-edit.\n"
+NOTE = ("/* GENERATED for GarmWatch from nmui — do not hand-edit.\n"
         "   The CSS-module import header of the original is removed:\n"
         "   WebKit (Tauri's macOS/Linux webview) cannot parse it.\n"
         "   This component's CSS is loaded by ui/index.html instead.\n"

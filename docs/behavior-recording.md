@@ -1,6 +1,6 @@
 # Behavior recording
 
-From the first packet it ever sees, Deadband records how each
+From the first packet it ever sees, GarmWatch records how each
 device *behaves* — not just that it talked, but how it answers.
 For every Modbus server on the wire, a **response profile** grows:
 

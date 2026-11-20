@@ -1,9 +1,9 @@
-# Deadband
+# GarmWatch
 
 **A real-time, passive OT network monitor — the Purdue Model as a live map,
 with early warning when traffic starts to look like an attack.**
 
-Deadband watches a copy of an industrial network's traffic, works out which
+GarmWatch watches a copy of an industrial network's traffic, works out which
 devices exist and who normally talks to whom, draws them on the Purdue Model
 (Levels 5 → 0), and raises the alarm early — during an attacker's snooping
 phase, before anything destructive happens. It is built for the plants that
@@ -25,7 +25,7 @@ systems, and factories.
 
 ## Try it in five minutes (the demo)
 
-Deadband ships with a built-in simulated plant, so the whole demo
+GarmWatch ships with a built-in simulated plant, so the whole demo
 runs offline on one machine:
 
 1. **Launch the app.** The splash fades into the Live map: seven
@@ -48,7 +48,7 @@ runs offline on one machine:
    warning during reconnaissance, before anything destructive — is
    the point of the product.
 6. **Replay a capture** (Events → *Replay the bundled sample*). A
-   foreign plant Deadband has never seen is discovered passively
+   foreign plant GarmWatch has never seen is discovered passively
    into the UNPLACED strip — including its own rogue laptop, which
    the rules flag on sight.
 
@@ -73,8 +73,8 @@ git commit -m "CI workflow" && git push
 
 ## Brand assets
 
-The Deadband logo (shield mark + wordmark) appears on the app's splash
-screen from `ui/assets/deadband-logo.jpg`; the app icons in
+The GarmWatch logo (shield mark + wordmark) appears on the app's splash
+screen from `ui/assets/garmwatch-logo.png`; the app icons in
 `src-tauri/icons/` are the shield mark cropped from the same artwork.
 These are binary files, so they travel outside the text-only sync —
 if they are missing, the app still runs (the splash skips itself).
@@ -83,12 +83,12 @@ if they are missing, the app still runs (the splash skips itself).
 
 These are design constraints, not settings:
 
-1. **Passive only, forever.** Deadband reads copies of network traffic. It
+1. **Passive only, forever.** GarmWatch reads copies of network traffic. It
    never scans, pings, probes, or transmits into a monitored network —
    active scanning can crash fragile industrial controllers and cause real
    outages.
 2. **AI warns, AI never acts.** Detection layers raise warnings and explain
-   them in plain English. Deadband never automatically blocks, disconnects,
+   them in plain English. GarmWatch never automatically blocks, disconnects,
    or reconfigures anything. A human decides.
 3. **Local first, no cloud.** Plant data never leaves the user's machine.
    AI features, when present, run against a local model.
@@ -114,7 +114,7 @@ that turns flagged chunks into a plain-English incident summary.
 
 ## Stack
 
-- **Rust** engine as a standalone library crate (`crates/deadband-core`) —
+- **Rust** engine as a standalone library crate (`crates/garmwatch-core`) —
   source / parse / model / detect / store modules matching the pipeline.
 - **Tauri 2** desktop shell (`src-tauri`) for Mac, Windows, and Linux from
   one codebase.
@@ -142,7 +142,7 @@ are fast. `cargo clean` reclaims the space.
 Run the engine's tests without the app:
 
 ```sh
-cargo test -p deadband-core
+cargo test -p garmwatch-core
 ```
 
 ## Authorship

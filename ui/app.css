@@ -1,5 +1,5 @@
-/* Deadband app layout. Colors and shape come from the nmui tokens and
-   the Deadband Industrial theme (vendor/nmui/css/) — this file only
+/* GarmWatch app layout. Colors and shape come from the nmui tokens and
+   the GarmWatch Industrial theme (vendor/nmui/css/) — this file only
    places things. */
 
 :root { color-scheme: dark; }
@@ -142,7 +142,7 @@ nmui-text-field .text-input:focus { outline: none; }
 
 /* Menu check marks: nmui-menu marks the selected item with
    <icon class="check">check</icon> — a Material Symbols ligature.
-   Deadband is local-first and ships no icon font, so the ligature
+   GarmWatch is local-first and ships no icon font, so the ligature
    renders as the literal word "check". Until the font is self-hosted,
    hide the ligature text and draw a plain checkmark instead. */
 nmui-menu > button > icon.check,
@@ -208,7 +208,7 @@ nmui-menu > section > button > icon.check::before {
 /* Alert bell: the one place alerts are always visible, whatever view
    you're on. The badge counts alerts you haven't looked at yet;
    opening the panel marks them seen. The icon is inline SVG —
-   Deadband ships no icon font, so no ligature text can leak. */
+   GarmWatch ships no icon font, so no ligature text can leak. */
 .alert-bell-wrap { position: relative; margin-left: auto; }
 .alert-bell {
   position: relative; display: inline-flex; align-items: center; justify-content: center;
@@ -313,33 +313,26 @@ ol.levels li span { color: var(--md-sys-color-on-surface-variant); }
 .setting-row .menu-field [trailing] { font-size: 18px; color: var(--md-sys-color-on-surface-variant); }
 
 .rail-brand-row { display: flex; align-items: center; gap: 4px; }
-/* The brand artwork sits on a pure-black ground while the rail is
-   charcoal-navy; screen blending makes black act transparent, so the
-   art floats on the rail's own color instead of a mismatched tile. */
-.rail-mark { width: 34px; height: 34px; display: block; margin-left: 8px; mix-blend-mode: screen; }
-/* The DEADBAND wordmark, windowed out of the full logo already in the
-   repo (measured crop: x 148–1261, y 600–714 of the 1408×768 image) —
-   the real steel/copper lettering, no new asset files. */
+/* The GarmWatch wolf mark ships on a transparent ground, so it
+   floats on the rail's own color on every theme. object-fit crops
+   the wide canvas down to the wolf itself at this small size. */
+.rail-mark { width: 34px; height: 34px; display: block; margin-left: 8px; object-fit: cover; }
+/* The GARMWATCH wordmark from the supplied text-only art, windowed
+   to its measured ink box (x 89–1974, y 485–784 of the 2048×1118
+   canvas) so the lettering fills the strip exactly. */
 .rail-wordmark {
   width: 188px; height: 20px; flex: none;
-  background-image: url("./assets/deadband-logo.jpg");
-  background-size: 126.5% 673.68%;
-  background-position: 50.17% 91.74%;
+  background-image: url("./assets/garmwatch-wordmark.png");
+  background-size: 108.7% 374.5%;
+  background-position: 54.6% 59.2%;
   background-repeat: no-repeat;
-  mix-blend-mode: screen;
 }
-/* Light themes: the supplied brand art is a JPEG with black baked
-   into the pixels — no blend mode can lift that black off a light
-   rail without washing the lettering out with it, so the black
-   plaque is gone. Instead the rail shows a live-text wordmark in
-   the theme's own colors (same steel/copper two-tone as the art),
-   which has no background at all and matches every theme. The
-   image art stays on the dark themes, untouched. */
+/* Light themes: the wordmark art's silver lettering washes out on
+   a light rail, so light themes swap it for a live-text wordmark
+   in the theme's own colors (same two-tone split as the art: GARM
+   in the text color, WATCH in red). The transparent wolf mark
+   reads fine on light, so it stays on every theme. */
 .rail-wordmark-text { display: none; }
-:root[theme="paper-white"] .rail-mark,
-:root[theme="daylight-steel"] .rail-mark,
-:root[theme="warm-light"] .rail-mark,
-:root[theme="contrast-paper"] .rail-mark,
 :root[theme="paper-white"] .rail-wordmark,
 :root[theme="daylight-steel"] .rail-wordmark,
 :root[theme="warm-light"] .rail-wordmark,

@@ -11,7 +11,7 @@ use std::net::IpAddr;
 
 /// A level of the Purdue Model (ISA-95 / PERA), top (internet) to bottom
 /// (physical process). The IT/OT boundary — and the Level 3.5 DMZ that
-/// guards it — is where most of Deadband's attention lives.
+/// guards it — is where most of GarmWatch's attention lives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PurdueLevel {
     /// Level 5 — internet / external services. Attackers start here.

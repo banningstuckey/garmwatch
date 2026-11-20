@@ -1,48 +1,48 @@
 # Setting up the local AI (Ollama)
 
-Deadband's analyst (the plain-English incident explanations) and the
+GarmWatch's analyst (the plain-English incident explanations) and the
 plain-English log query both run on a language model on your own
 machine, through [Ollama](https://ollama.com). Nothing is sent
 anywhere: the model, the prompts, and your plant data all stay local.
-Deadband works fully without it — the analyst and the AI query toggle
+GarmWatch works fully without it — the analyst and the AI query toggle
 just stay quiet until a model is there.
 
-## Why Ollama isn't bundled with Deadband
+## Why Ollama isn't bundled with GarmWatch
 
-Ollama is a separate application, not a library Deadband can ship
+Ollama is a separate application, not a library GarmWatch can ship
 inside itself:
 
 - It's roughly 1 GB on its own, and every model is several more GB
-  (`llama3` is ~4.7 GB). Bundling it would make every Deadband
+  (`llama3` is ~4.7 GB). Bundling it would make every GarmWatch
   download enormous, and the model files change on their own schedule.
 - It has its own installer per operating system (a macOS app, a
   Windows installer, a Linux install script) and its own update
   channel. The supported way to get it is from its maker.
-- It runs as its own background service on port 11434. Deadband just
+- It runs as its own background service on port 11434. GarmWatch just
   talks to that port on localhost — it never manages the service.
 
-So instead of bundling it, Deadband detects it and guides you to the
+So instead of bundling it, GarmWatch detects it and guides you to the
 one-time install below. The Settings view has a "Local AI (Ollama)"
 card with the same steps and a Recheck button.
 
 ## Install
 
-1. In Deadband → Settings → Local AI (Ollama), press **Get Ollama**
+1. In GarmWatch → Settings → Local AI (Ollama), press **Get Ollama**
    — it opens <https://ollama.com/download> in your browser
    (macOS, Windows, or Linux). Install it like any other app.
    (On Linux the same page offers the one-line install:
    `curl -fsSL https://ollama.com/install.sh | sh`.)
-2. Come back to the same card. Once Ollama is running, Deadband
+2. Come back to the same card. Once Ollama is running, GarmWatch
    offers **Download llama3 (~4.7 GB)** right in the card — one
    click, live progress, no terminal. `llama3` is the small
-   general model Deadband is tuned for (the one the analyst was
+   general model GarmWatch is tuned for (the one the analyst was
    built and tested against).
    The terminal way still works if you prefer it:
    `ollama pull llama3`. A larger alternative is
    `llama3.1:8b` (8 GB, slower, better prose) — pull it in a
    terminal, then pick it in Settings → Preferred analyst model;
    "First available" just takes whatever is installed.
-3. Ollama starts itself on login. Open Deadband → Settings → Local
+3. Ollama starts itself on login. Open GarmWatch → Settings → Local
    AI → Recheck. It should report "Ollama is running" and list your
    model.
 
@@ -57,12 +57,12 @@ card with the same steps and a Recheck button.
   can be slow while the model loads into memory. A smaller model, or
   more RAM, helps. The explain call gives the model 180 seconds.
 - **Port 11434 in use** — something else is already serving there.
-  Deadband only ever talks to localhost, so check what's listening
+  GarmWatch only ever talks to localhost, so check what's listening
   (`lsof -i :11434` on macOS/Linux).
 
 ## What the model sees
 
-Only what Deadband sends it, per request: for an explanation, a
+Only what GarmWatch sends it, per request: for an explanation, a
 digested incident (the alert, its factors, nearby events — never raw
 packets); for a query translation, your question plus the device
 roster (labels and IPs) and the query grammar. The model answers in

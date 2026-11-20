@@ -330,7 +330,7 @@ pub enum ParseError {
     Empty,
     /// Truncated or malformed at a named layer ("ethernet", "ipv4", …).
     Malformed(&'static str),
-    /// Well-formed, but a protocol Deadband does not decode.
+    /// Well-formed, but a protocol GarmWatch does not decode.
     Unsupported(&'static str),
     /// The decoder for this protocol lands in a later phase.
     NotImplemented(&'static str),
@@ -353,7 +353,7 @@ fn u16be(bytes: &[u8], at: usize) -> u16 {
     u16::from_be_bytes([bytes[at], bytes[at + 1]])
 }
 
-/// Parses one raw packet (an Ethernet II frame, as every Deadband
+/// Parses one raw packet (an Ethernet II frame, as every GarmWatch
 /// source supplies) into a [`ParsedPacket`].
 pub fn parse_packet(packet: &Packet) -> Result<ParsedPacket, ParseError> {
     let data = &packet.data;
@@ -477,7 +477,7 @@ fn parse_modbus(src_port: Option<u16>, dst_port: Option<u16>, adu: &[u8]) -> Opt
         values: Vec::new(),
     };
     if !is_response && adu.len() >= 12 {
-        // Request PDUs for every function Deadband decodes carry the
+        // Request PDUs for every function GarmWatch decodes carry the
         // start address at bytes 8–9; what follows depends on the code.
         info.address = Some(u16be(adu, 8));
         match function_code {

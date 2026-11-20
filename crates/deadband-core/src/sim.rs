@@ -2,7 +2,7 @@
 //! Ethernet/IP/TCP frames carrying real Modbus/TCP traffic, on a
 //! believable schedule.
 //!
-//! This is Deadband's built-in lab. The frames are byte-for-byte what a
+//! This is GarmWatch's built-in lab. The frames are byte-for-byte what a
 //! capture of a real plant would contain (correct checksums included),
 //! so the parser, store, and detection layers are exercised honestly —
 //! the GUI never fakes its data. The plant is deterministic: same seed,

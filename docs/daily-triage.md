@@ -41,6 +41,6 @@ instruct a response. It may mention that quarantining is the
 operator's option; the decision stays human, as always.
 
 The brief is recorded in the log as an analyst note, so the day's
-narration is itself part of the record. Deadband works fully
+narration is itself part of the record. GarmWatch works fully
 without the analyst — the ranked list is the feature; the prose is
 a convenience.

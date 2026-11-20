@@ -1,10 +1,10 @@
 [package]
-name = "deadband-core"
+name = "garmwatch-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Deadband core engine: passive OT traffic ingestion, parsing, asset inventory, and detection. No UI, no network transmission — analysis only."
+description = "GarmWatch core engine: passive OT traffic ingestion, parsing, asset inventory, and detection. No UI, no network transmission — analysis only."
 
 [dependencies]
 # SQLite storage. `bundled` compiles SQLite from source so the app needs

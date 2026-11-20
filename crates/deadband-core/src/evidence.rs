@@ -180,7 +180,7 @@ pub fn render_html(report: &EvidenceReport, generated_by: &str) -> String {
          .ev-doc .ev-meta{opacity:.75}.ev-doc .ev-flag{font-weight:700}\
          </style><div class=\"ev-doc\">",
     );
-    out.push_str("<h2>Deadband — audit evidence report</h2>");
+    out.push_str("<h2>GarmWatch — audit evidence report</h2>");
     out.push_str(&format!(
         "<p class=\"ev-meta\">Generated {} by {} · Window: everything stored since {} · \
          {} events · {} alerts · {} operator actions · {} canary touches · {} new devices</p>",
@@ -263,9 +263,9 @@ pub fn render_html(report: &EvidenceReport, generated_by: &str) -> String {
         out.push_str("</table>");
     }
     out.push_str(
-        "<p class=\"ev-meta\">This report is a view over Deadband's stored audit trail, \
+        "<p class=\"ev-meta\">This report is a view over GarmWatch's stored audit trail, \
          generated on the sensor. Generating it was itself recorded in the trail. \
-         Deadband is passive: it observes and records; it does not act on the network.</p></div>",
+         GarmWatch is passive: it observes and records; it does not act on the network.</p></div>",
     );
     out
 }
@@ -300,7 +300,7 @@ mod tests {
             event(
                 2_000,
                 EventKind::OperatorAction,
-                "Ignored actor 10.0.9.77 — marked known/expected by banning. Deadband keeps watching.",
+                "Ignored actor 10.0.9.77 — marked known/expected by banning. GarmWatch keeps watching.",
                 None,
             ),
             event(

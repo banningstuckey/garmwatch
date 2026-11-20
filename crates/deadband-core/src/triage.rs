@@ -211,7 +211,7 @@ pub fn daily_report(
 pub fn build_triage_prompt(report: &TriageReport) -> String {
     let mut prompt = String::new();
     prompt.push_str(
-        "You are the analyst inside Deadband, a passive OT (industrial control) network \
+        "You are the analyst inside GarmWatch, a passive OT (industrial control) network \
          monitor. Below is the daily triage for the last 24 hours: the ranked list of \
          what most needs a plant operator's attention, with counts. Write a short daily \
          brief for an operator who is not a security specialist.\n\n\
@@ -285,7 +285,7 @@ mod tests {
         let mut ignore = Event::new(
             NOW - 300,
             EventKind::OperatorAction,
-            "Ignored actor 192.168.50.77 — marked known/expected by banning. Deadband keeps watching.".to_string(),
+            "Ignored actor 192.168.50.77 — marked known/expected by banning. GarmWatch keeps watching.".to_string(),
         );
         ignore.src_ip = None;
         let mut quarantined = HashMap::new();

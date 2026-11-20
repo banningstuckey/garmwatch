@@ -1,14 +1,14 @@
-//! Deadband desktop shell.
+//! GarmWatch desktop shell.
 //!
 //! This crate is intentionally thin: it owns the window, the Tauri
 //! command bridge, and the simulation thread — nothing else. All
-//! monitoring logic lives in `deadband-core` so it can be tested
+//! monitoring logic lives in `garmwatch-core` so it can be tested
 //! without a UI and reused by a future headless sensor.
 
-use deadband_core::analyst::AnalystClient;
-use deadband_core::model::{Device, DeviceRole, Event, EventKind, PurdueLevel};
-use deadband_core::source::{SimulatedSource, TrafficSource};
-use deadband_core::store::Store;
+use garmwatch_core::analyst::AnalystClient;
+use garmwatch_core::model::{Device, DeviceRole, Event, EventKind, PurdueLevel};
+use garmwatch_core::source::{SimulatedSource, TrafficSource};
+use garmwatch_core::store::Store;
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -23,7 +23,7 @@ struct AppState {
     replay_info: Arc<Mutex<ReplayInfo>>,
     capture_running: Arc<AtomicBool>,
     capture_info: Arc<Mutex<CaptureInfo>>,
-    canary_server: Arc<Mutex<Option<deadband_core::canary::CanaryServer>>>,
+    canary_server: Arc<Mutex<Option<garmwatch_core::canary::CanaryServer>>>,
     canary_info: Arc<Mutex<CanaryInfo>>,
     maintenance: Arc<Mutex<MaintenanceInfo>>,
     anomaly_shared: Arc<Mutex<AnomalyStatusDto>>,
@@ -55,7 +55,7 @@ impl Default for AnomalyStatusDto {
 /// Publishes a feed thread's anomaly status for the UI.
 fn publish_anomaly(
     shared: &Arc<Mutex<AnomalyStatusDto>>,
-    layer: &deadband_core::detect::AnomalyLayer,
+    layer: &garmwatch_core::detect::AnomalyLayer,
 ) {
     let status = layer.status();
     if let Ok(mut dto) = shared.lock() {
@@ -93,7 +93,7 @@ fn now_ms() -> i64 {
 }
 
 /// Engine status as sent to the frontend. Mirrors
-/// `deadband_core::EngineStatus` in a serialisable form.
+/// `garmwatch_core::EngineStatus` in a serialisable form.
 #[derive(Debug, Serialize)]
 struct EngineStatusResponse {
     name: &'static str,
@@ -106,7 +106,7 @@ struct EngineStatusResponse {
 /// works end to end.
 #[tauri::command]
 fn engine_status() -> EngineStatusResponse {
-    let status = deadband_core::engine_status();
+    let status = garmwatch_core::engine_status();
     EngineStatusResponse {
         name: status.name,
         version: status.version,
@@ -164,8 +164,8 @@ fn status_of(state: &AppState) -> SimulationStatus {
         .lock()
         .map(|store| {
             (
-                deadband_core::engine::stats(&store).devices,
-                deadband_core::engine::stats(&store).events,
+                garmwatch_core::engine::stats(&store).devices,
+                garmwatch_core::engine::stats(&store).events,
             )
         })
         .unwrap_or((0, 0));
@@ -185,7 +185,7 @@ fn start_simulation(app: tauri::AppHandle, state: tauri::State<AppState>) -> Sim
     record_operator_event(&app, &state.store, format!("Simulation started by {}.", os_user()));
     let now_s = now_ms() / 1000;
     if let Ok(store) = state.store.lock() {
-        for mut device in deadband_core::sim::roster() {
+        for mut device in garmwatch_core::sim::roster() {
             device.first_seen = now_s;
             device.last_seen = now_s;
             let _ = store.add_device(&device);
@@ -198,12 +198,12 @@ fn start_simulation(app: tauri::AppHandle, state: tauri::State<AppState>) -> Sim
     std::thread::spawn(move || {
         let mut source = SimulatedSource::new(now_ms());
         let mut rules = match store.lock() {
-            Ok(store) => deadband_core::detect::RulesLayer::from_store(&store),
-            Err(_) => deadband_core::detect::RulesLayer::new(),
+            Ok(store) => garmwatch_core::detect::RulesLayer::from_store(&store),
+            Err(_) => garmwatch_core::detect::RulesLayer::new(),
         };
         let mut anomaly = match store.lock() {
-            Ok(store) => deadband_core::detect::AnomalyLayer::from_store(&store),
-            Err(_) => deadband_core::detect::AnomalyLayer::new(),
+            Ok(store) => garmwatch_core::detect::AnomalyLayer::from_store(&store),
+            Err(_) => garmwatch_core::detect::AnomalyLayer::new(),
         };
         while running.load(Ordering::Relaxed) {
             for _ in 0..6 {
@@ -212,7 +212,7 @@ fn start_simulation(app: tauri::AppHandle, state: tauri::State<AppState>) -> Sim
                 }
                 if let Some(packet) = source.next_packet() {
                     let events = match store.lock() {
-                        Ok(store) => deadband_core::engine::process_packet_full(
+                        Ok(store) => garmwatch_core::engine::process_packet_full(
                             &store, &packet, &mut rules, &mut anomaly,
                             maintenance_active(&maint_handle),
                         ),
@@ -296,12 +296,12 @@ fn start_replay(
                 Ok(bytes) => bytes,
                 Err(e) => return fail(&state, format!("Could not read {path}: {e}")),
             };
-            match deadband_core::pcap::read_pcap(&bytes) {
+            match garmwatch_core::pcap::read_pcap(&bytes) {
                 Ok(packets) => (path.to_string(), packets),
                 Err(e) => return fail(&state, format!("{path}: {e}")),
             }
         }
-        None => ("bundled sample capture".to_string(), deadband_core::sample::sample_packets()),
+        None => ("bundled sample capture".to_string(), garmwatch_core::sample::sample_packets()),
     };
     if packets.is_empty() {
         return fail(&state, format!("{label}: no packets in capture"));
@@ -335,12 +335,12 @@ fn start_replay(
     let maint_handle = Arc::clone(&state.maintenance);
     std::thread::spawn(move || {
         let mut rules = match store.lock() {
-            Ok(store) => deadband_core::detect::RulesLayer::from_store(&store),
-            Err(_) => deadband_core::detect::RulesLayer::new(),
+            Ok(store) => garmwatch_core::detect::RulesLayer::from_store(&store),
+            Err(_) => garmwatch_core::detect::RulesLayer::new(),
         };
         let mut anomaly = match store.lock() {
-            Ok(store) => deadband_core::detect::AnomalyLayer::from_store(&store),
-            Err(_) => deadband_core::detect::AnomalyLayer::new(),
+            Ok(store) => garmwatch_core::detect::AnomalyLayer::from_store(&store),
+            Err(_) => garmwatch_core::detect::AnomalyLayer::new(),
         };
         let mut previous_ts: Option<i64> = None;
         for (index, packet) in packets.iter().enumerate() {
@@ -355,12 +355,12 @@ fn start_replay(
                 }
             }
             previous_ts = Some(packet.timestamp_ms);
-            let shifted = deadband_core::source::Packet {
+            let shifted = garmwatch_core::source::Packet {
                 timestamp_ms: packet.timestamp_ms + shift,
                 data: packet.data.clone(),
             };
             let events = match store.lock() {
-                Ok(store) => deadband_core::engine::process_packet_full(
+                Ok(store) => garmwatch_core::engine::process_packet_full(
                     &store, &shifted, &mut rules, &mut anomaly,
                     maintenance_active(&maint_handle),
                 ),
@@ -442,16 +442,16 @@ fn capture_status_of(state: &AppState) -> CaptureStatus {
     let health = if !running {
         "off".to_string()
     } else {
-        match deadband_core::capture::capture_health(
+        match garmwatch_core::capture::capture_health(
             true,
             info.started_at_ms / 1000,
             info.last_packet_at_ms.map(|t| t / 1000),
             info.packets_seen,
             now_s,
         ) {
-            deadband_core::capture::CaptureHealth::Flowing => "flowing".to_string(),
-            deadband_core::capture::CaptureHealth::GoneQuiet => "quiet".to_string(),
-            deadband_core::capture::CaptureHealth::NeverSawTraffic => "silent".to_string(),
+            garmwatch_core::capture::CaptureHealth::Flowing => "flowing".to_string(),
+            garmwatch_core::capture::CaptureHealth::GoneQuiet => "quiet".to_string(),
+            garmwatch_core::capture::CaptureHealth::NeverSawTraffic => "silent".to_string(),
         }
     };
     CaptureStatus {
@@ -466,7 +466,7 @@ fn capture_status_of(state: &AppState) -> CaptureStatus {
 }
 
 fn list_interfaces_inner() -> Result<Vec<InterfaceDto>, String> {
-    deadband_core::capture::list_interfaces().map(|ifs| {
+    garmwatch_core::capture::list_interfaces().map(|ifs| {
         ifs.into_iter()
             .map(|i| InterfaceDto {
                 name: i.name,
@@ -539,7 +539,7 @@ fn capture_status(state: tauri::State<AppState>) -> CaptureStatus {
 /// the Events log, the bell and the latest-alert line) and latch it
 /// until traffic resumes.
 fn check_capture_health(
-    store: &Arc<Mutex<deadband_core::store::Store>>,
+    store: &Arc<Mutex<garmwatch_core::store::Store>>,
     info_handle: &Arc<Mutex<CaptureInfo>>,
     app: &tauri::AppHandle,
     interface: &str,
@@ -547,14 +547,14 @@ fn check_capture_health(
     let health = match info_handle.lock() {
         Ok(mut info) => {
             let now_s = now_ms() / 1000;
-            let health = deadband_core::capture::capture_health(
+            let health = garmwatch_core::capture::capture_health(
                 true,
                 info.started_at_ms / 1000,
                 info.last_packet_at_ms.map(|t| t / 1000),
                 info.packets_seen,
                 now_s,
             );
-            if health == deadband_core::capture::CaptureHealth::Flowing {
+            if health == garmwatch_core::capture::CaptureHealth::Flowing {
                 info.quiet_alerted = false;
                 return;
             }
@@ -566,7 +566,7 @@ fn check_capture_health(
         }
         Err(_) => return,
     };
-    let mut event = match deadband_core::capture::health_alert_event(
+    let mut event = match garmwatch_core::capture::health_alert_event(
         health,
         interface,
         now_ms() / 1000,
@@ -587,7 +587,7 @@ fn spawn_capture_thread(
     state: &AppState,
     interface: String,
 ) {
-    let capture = match deadband_core::capture::LiveCapture::open(&interface) {
+    let capture = match garmwatch_core::capture::LiveCapture::open(&interface) {
         Ok(capture) => capture,
         Err(message) => {
             state.capture_running.store(false, Ordering::Relaxed);
@@ -604,12 +604,12 @@ fn spawn_capture_thread(
     let maint_handle = Arc::clone(&state.maintenance);
     std::thread::spawn(move || {
         let mut rules = match store.lock() {
-            Ok(store) => deadband_core::detect::RulesLayer::from_store(&store),
-            Err(_) => deadband_core::detect::RulesLayer::new(),
+            Ok(store) => garmwatch_core::detect::RulesLayer::from_store(&store),
+            Err(_) => garmwatch_core::detect::RulesLayer::new(),
         };
         let mut anomaly = match store.lock() {
-            Ok(store) => deadband_core::detect::AnomalyLayer::from_store(&store),
-            Err(_) => deadband_core::detect::AnomalyLayer::new(),
+            Ok(store) => garmwatch_core::detect::AnomalyLayer::from_store(&store),
+            Err(_) => garmwatch_core::detect::AnomalyLayer::new(),
         };
         let mut cap = capture;
         let mut last_check_ms = 0i64;
@@ -619,12 +619,12 @@ fn spawn_capture_thread(
             }
             match cap.next() {
                 Ok(Some(raw)) => {
-                    let owned = deadband_core::source::Packet {
+                    let owned = garmwatch_core::source::Packet {
                         timestamp_ms: raw.timestamp_ms,
                         data: raw.data,
                     };
                     let events = match store.lock() {
-                        Ok(store) => deadband_core::engine::process_packet_full(
+                        Ok(store) => garmwatch_core::engine::process_packet_full(
                             &store, &owned, &mut rules, &mut anomaly,
                             maintenance_active(&maint_handle),
                         ),
@@ -845,7 +845,7 @@ struct ProfileDto {
 /// at +128 by the recorder and named here via the core table.
 fn profile_function_name(function: u8) -> String {
     if function >= 128 {
-        format!("DNP3 {}", deadband_core::parse::dnp3_function_name(function - 128))
+        format!("DNP3 {}", garmwatch_core::parse::dnp3_function_name(function - 128))
     } else {
         modbus_function_name(function)
     }
@@ -910,7 +910,7 @@ fn device_profile(state: tauri::State<AppState>, ip: String) -> Option<ProfileDt
 // Every actor carries an explainable suspicion score (see core
 // suspicion.rs). The detail views show the score, the why, and the
 // two human actions: Ignore (a judgment factored into the score —
-// never a mute) and Quarantine (a human-confirmed order; Deadband
+// never a mute) and Quarantine (a human-confirmed order; GarmWatch
 // marks, escalates, and prepares the action sheet — the physical
 // move is the network gear's step). Every action is an operator
 // event in the audit log, with who did it.
@@ -950,10 +950,10 @@ fn band_of(score: i32) -> &'static str {
 fn actor_detail_of(store: &Store, ip: std::net::IpAddr) -> ActorDto {
     let now_s = now_ms() / 1000;
     let events = store
-        .events_since(now_s - deadband_core::suspicion::WINDOW_S, 5000)
+        .events_since(now_s - garmwatch_core::suspicion::WINDOW_S, 5000)
         .unwrap_or_default();
     let quarantined = store.quarantined().unwrap_or_default();
-    let suspicion = deadband_core::suspicion::compute(&events, &quarantined, ip, now_s);
+    let suspicion = garmwatch_core::suspicion::compute(&events, &quarantined, ip, now_s);
     let held = quarantined.get(&ip);
     ActorDto {
         ip: ip.to_string(),
@@ -973,12 +973,12 @@ fn actor_detail_of(store: &Store, ip: std::net::IpAddr) -> ActorDto {
 }
 
 /// The one-page hand-off for the operator's network gear: what the
-/// device is, why it was held, what Deadband has and has not done,
+/// device is, why it was held, what GarmWatch has and has not done,
 /// and the exact isolation steps for a human to apply.
 fn build_action_sheet(
     store: &Store,
     ip: std::net::IpAddr,
-    suspicion: &deadband_core::suspicion::Suspicion,
+    suspicion: &garmwatch_core::suspicion::Suspicion,
     ordered_by: &str,
     at_s: i64,
 ) -> String {
@@ -1005,14 +1005,14 @@ fn build_action_sheet(
         }
     }
     sheet.push_str(
-        "\nDeadband has: marked the device quarantined, held its suspicion at 90+, \
+        "\nGarmWatch has: marked the device quarantined, held its suspicion at 90+, \
          escalated its events, and logged this order with who made it.\n\
-         Deadband has NOT touched the network — it is a passive monitor. \
+         GarmWatch has NOT touched the network — it is a passive monitor. \
          To physically isolate the device, on your gear:\n\
          1. On the switch this device plugs into: shut its port, or move the port to the quarantine VLAN.\n\
          2. Or on the firewall between its zone and the controllers: block all traffic from this IP to the Level 1/2 networks.\n\
          3. Leave the device powered and connected to the quarantine segment if it is being held for the twin — do not wipe it; it is evidence.\n\
-         Release: the Release button in this device's detail in Deadband, once the investigation is done. The release is logged too.",
+         Release: the Release button in this device's detail in GarmWatch, once the investigation is done. The release is logged too.",
     );
     sheet
 }
@@ -1036,14 +1036,14 @@ fn ignore_actor(app: tauri::AppHandle, state: tauri::State<AppState>, ip: String
         &app,
         &state.store,
         format!(
-            "Ignored actor {addr} — marked known/expected by {user}. Deadband keeps watching and recording it; the mark is factored into its suspicion score, and later alerts count at full weight."
+            "Ignored actor {addr} — marked known/expected by {user}. GarmWatch keeps watching and recording it; the mark is factored into its suspicion score, and later alerts count at full weight."
         ),
     );
     let store = state.store.lock().ok()?;
     Some(actor_detail_of(&store, addr))
 }
 
-/// Quarantine: a human-confirmed order. Deadband marks the actor,
+/// Quarantine: a human-confirmed order. GarmWatch marks the actor,
 /// holds its score, and prepares the action sheet; the physical
 /// move is the network gear's step, taken by a human.
 #[tauri::command]
@@ -1057,7 +1057,7 @@ fn quarantine_actor(app: tauri::AppHandle, state: tauri::State<AppState>, ip: St
         &app,
         &state.store,
         format!(
-            "Quarantined actor {addr} — ordered by {user}. Deadband has marked it, held its suspicion, and prepared the action sheet; the physical move is the network gear's step."
+            "Quarantined actor {addr} — ordered by {user}. GarmWatch has marked it, held its suspicion, and prepared the action sheet; the physical move is the network gear's step."
         ),
     );
     let store = state.store.lock().ok()?;
@@ -1109,13 +1109,13 @@ struct TriageDto {
 
 /// Builds the triage report from the store (shared by the card and
 /// the analyst command).
-fn triage_report_of(store: &Store) -> deadband_core::triage::TriageReport {
+fn triage_report_of(store: &Store) -> garmwatch_core::triage::TriageReport {
     let now_s = now_ms() / 1000;
     let events = store
-        .events_since(now_s - deadband_core::suspicion::WINDOW_S, 5000)
+        .events_since(now_s - garmwatch_core::suspicion::WINDOW_S, 5000)
         .unwrap_or_default();
     let quarantined = store.quarantined().unwrap_or_default();
-    let scores = deadband_core::suspicion::compute_all(&events, &quarantined, now_s);
+    let scores = garmwatch_core::suspicion::compute_all(&events, &quarantined, now_s);
     let names = store
         .list_devices()
         .unwrap_or_default()
@@ -1128,10 +1128,10 @@ fn triage_report_of(store: &Store) -> deadband_core::triage::TriageReport {
             (d.ip, name)
         })
         .collect();
-    deadband_core::triage::daily_report(&events, &scores, &quarantined, &names, now_s)
+    garmwatch_core::triage::daily_report(&events, &scores, &quarantined, &names, now_s)
 }
 
-fn triage_dto(report: &deadband_core::triage::TriageReport) -> TriageDto {
+fn triage_dto(report: &garmwatch_core::triage::TriageReport) -> TriageDto {
     TriageDto {
         generated_at_s: report.generated_at_s,
         items: report
@@ -1182,21 +1182,21 @@ async fn explain_triage(
         let chosen = model.filter(|m| !m.trim().is_empty()).or_else(|| {
             http_local("GET", "/api/tags", None, std::time::Duration::from_secs(2))
                 .ok()
-                .and_then(|text| deadband_core::analyst::ollama_model_names(&text).into_iter().next())
+                .and_then(|text| garmwatch_core::analyst::ollama_model_names(&text).into_iter().next())
         });
         let Some(model) = chosen else {
-            return Err("No local model available yet — set one up in Settings \u{2192} Local AI (Ollama); once Ollama is installed, Deadband can download the recommended model for you.".to_string());
+            return Err("No local model available yet — set one up in Settings \u{2192} Local AI (Ollama); once Ollama is installed, GarmWatch can download the recommended model for you.".to_string());
         };
         let prompt = {
             let store = store.lock().map_err(|_| "store lock poisoned".to_string())?;
-            deadband_core::triage::build_triage_prompt(&triage_report_of(&store))
+            garmwatch_core::triage::build_triage_prompt(&triage_report_of(&store))
         };
         let client = OllamaClient { model: model.clone() };
         let narrative = client
             .explain(&prompt)
             .map_err(|e| e.to_string())?;
         let preview: String = narrative.chars().take(280).collect();
-        let note = deadband_core::model::Event::new(
+        let note = garmwatch_core::model::Event::new(
             now_ms() / 1000,
             EventKind::AnalystNote,
             format!("Analyst daily brief ({model}): {preview}"),
@@ -1217,7 +1217,7 @@ async fn explain_triage(
 // ---- AI setup smoothing: browser links + in-app model download ----
 // Ollama itself is a separate install (its own ~1 GB app), but
 // everything after that install should be one click inside
-// Deadband — nobody should need a terminal to fetch a model.
+// GarmWatch — nobody should need a terminal to fetch a model.
 
 /// One model-pull progress update for the UI.
 #[derive(Clone, Serialize)]
@@ -1233,7 +1233,7 @@ struct PullProgressDto {
 #[tauri::command]
 fn open_external(url: String) -> Result<(), String> {
     if !(url == "https://ollama.com" || url.starts_with("https://ollama.com/")) {
-        return Err("that link is not one Deadband opens".to_string());
+        return Err("that link is not one GarmWatch opens".to_string());
     }
     #[cfg(target_os = "macos")]
     let mut cmd = {
@@ -1267,7 +1267,7 @@ fn pull_model_stream(app: &tauri::AppHandle, model: &str) -> Result<String, Stri
     let mut stream = std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(10))
         .map_err(|e| format!("cannot reach Ollama at 127.0.0.1:11434 ({e}) — is it installed and running?"))?;
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(180)));
-    let payload = deadband_core::analyst::ollama_pull_body(model);
+    let payload = garmwatch_core::analyst::ollama_pull_body(model);
     let request = format!(
         "POST /api/pull HTTP/1.1\r\nHost: 127.0.0.1:11434\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
         payload.len()
@@ -1349,7 +1349,7 @@ fn pull_model_stream(app: &tauri::AppHandle, model: &str) -> Result<String, Stri
         // Process complete lines.
         while let Some(nl) = text.find('\n') {
             let line: String = text.drain(..=nl).collect();
-            if let Some(progress) = deadband_core::analyst::parse_pull_line(&line) {
+            if let Some(progress) = garmwatch_core::analyst::parse_pull_line(&line) {
                 if let Some(error) = &progress.error {
                     return Err(format!("Ollama could not download the model: {error}"));
                 }
@@ -1376,7 +1376,7 @@ fn pull_model_stream(app: &tauri::AppHandle, model: &str) -> Result<String, Stri
         }
     }
     // A final unterminated line may still carry the verdict.
-    if let Some(progress) = deadband_core::analyst::parse_pull_line(&text) {
+    if let Some(progress) = garmwatch_core::analyst::parse_pull_line(&text) {
         if let Some(error) = &progress.error {
             return Err(format!("Ollama could not download the model: {error}"));
         }
@@ -1516,7 +1516,7 @@ fn start_canary(
         let store = Arc::clone(&state.store);
         let app = app.clone();
         let info_handle = Arc::clone(&state.canary_info);
-        move |touch: deadband_core::canary::CanaryTouch| {
+        move |touch: garmwatch_core::canary::CanaryTouch| {
             if let Ok(mut info) = info_handle.lock() {
                 info.touches += 1;
                 info.last_touch = Some(format!("{} — {}", touch.src_ip, touch.detail));
@@ -1524,7 +1524,7 @@ fn start_canary(
             }
             if let Ok(store) = store.lock() {
                 let _ = store.add_device(&Device::new(touch.src_ip, touch.timestamp_s));
-                let mut event = deadband_core::canary::touch_event(&touch, canary_ip);
+                let mut event = garmwatch_core::canary::touch_event(&touch, canary_ip);
                 if let Ok(id) = store.record_event(&event) {
                     event.id = Some(id);
                 }
@@ -1532,8 +1532,8 @@ fn start_canary(
             }
         }
     };
-    let config = deadband_core::canary::CanaryConfig { bind, port };
-    match deadband_core::canary::CanaryServer::start(&config, on_touch) {
+    let config = garmwatch_core::canary::CanaryConfig { bind, port };
+    match garmwatch_core::canary::CanaryServer::start(&config, on_touch) {
         Ok(server) => {
             // The canary itself joins the inventory as a PLC at
             // Level 1 — but only if this IP is not already known
@@ -1624,19 +1624,19 @@ fn rules_status(state: tauri::State<AppState>) -> RulesStatus {
         .map(|store| {
             (
                 store.alert_count().unwrap_or(0),
-                deadband_core::engine::stats(&store).events,
+                garmwatch_core::engine::stats(&store).events,
             )
         })
         .unwrap_or((0, 0));
     RulesStatus {
         alerts_total,
         events_total,
-        baseline_ready: events_total >= deadband_core::detect::BASELINE_EVENTS,
-        rules: deadband_core::detect::rule_catalog()
+        baseline_ready: events_total >= garmwatch_core::detect::BASELINE_EVENTS,
+        rules: garmwatch_core::detect::rule_catalog()
             .iter()
             .map(|r| RuleDto { id: r.id, name: r.name, description: r.description })
             .collect(),
-        scenarios: deadband_core::scenarios::catalog()
+        scenarios: garmwatch_core::scenarios::catalog()
             .iter()
             .map(|s| ScenarioDto { id: s.id, title: s.title, blurb: s.blurb })
             .collect(),
@@ -1649,7 +1649,7 @@ fn rules_status(state: tauri::State<AppState>) -> RulesStatus {
 /// transmitted anywhere (passive-only rule).
 #[tauri::command]
 fn run_scenario(app: tauri::AppHandle, state: tauri::State<AppState>, name: String) -> bool {
-    let Some(packets) = deadband_core::scenarios::packets(&name, now_ms()) else {
+    let Some(packets) = garmwatch_core::scenarios::packets(&name, now_ms()) else {
         return false;
     };
     record_operator_event(
@@ -1662,12 +1662,12 @@ fn run_scenario(app: tauri::AppHandle, state: tauri::State<AppState>, name: Stri
     let maint_handle = Arc::clone(&state.maintenance);
     std::thread::spawn(move || {
         let mut rules = match store.lock() {
-            Ok(store) => deadband_core::detect::RulesLayer::from_store(&store),
-            Err(_) => deadband_core::detect::RulesLayer::new(),
+            Ok(store) => garmwatch_core::detect::RulesLayer::from_store(&store),
+            Err(_) => garmwatch_core::detect::RulesLayer::new(),
         };
         let mut anomaly = match store.lock() {
-            Ok(store) => deadband_core::detect::AnomalyLayer::from_store(&store),
-            Err(_) => deadband_core::detect::AnomalyLayer::new(),
+            Ok(store) => garmwatch_core::detect::AnomalyLayer::from_store(&store),
+            Err(_) => garmwatch_core::detect::AnomalyLayer::new(),
         };
         let mut previous_ts: Option<i64> = None;
         for packet in &packets {
@@ -1679,7 +1679,7 @@ fn run_scenario(app: tauri::AppHandle, state: tauri::State<AppState>, name: Stri
             }
             previous_ts = Some(packet.timestamp_ms);
             let events = match store.lock() {
-                Ok(store) => deadband_core::engine::process_packet_full(
+                Ok(store) => garmwatch_core::engine::process_packet_full(
                     &store, packet, &mut rules, &mut anomaly,
                     maintenance_active(&maint_handle),
                 ),
@@ -1757,13 +1757,13 @@ struct OllamaClient {
     model: String,
 }
 
-impl deadband_core::analyst::AnalystClient for OllamaClient {
-    fn explain(&self, prompt: &str) -> Result<String, deadband_core::analyst::AnalystError> {
-        use deadband_core::analyst::AnalystError;
-        let body = deadband_core::analyst::ollama_chat_body(&self.model, prompt);
+impl garmwatch_core::analyst::AnalystClient for OllamaClient {
+    fn explain(&self, prompt: &str) -> Result<String, garmwatch_core::analyst::AnalystError> {
+        use garmwatch_core::analyst::AnalystError;
+        let body = garmwatch_core::analyst::ollama_chat_body(&self.model, prompt);
         let response = http_local("POST", "/api/chat", Some(&body), std::time::Duration::from_secs(180))
             .map_err(AnalystError::Transport)?;
-        deadband_core::analyst::parse_ollama_response(&response)
+        garmwatch_core::analyst::parse_ollama_response(&response)
     }
 }
 
@@ -1780,7 +1780,7 @@ struct AnalystStatusDto {
 fn analyst_status() -> AnalystStatusDto {
     match http_local("GET", "/api/tags", None, std::time::Duration::from_millis(900)) {
         Ok(text) => {
-            let models = deadband_core::analyst::ollama_model_names(&text);
+            let models = garmwatch_core::analyst::ollama_model_names(&text);
             let message = if models.is_empty() {
                 "Ollama is running but has no models yet — pull one (e.g. ollama pull llama3.1:8b)."
                     .to_string()
@@ -1793,7 +1793,7 @@ fn analyst_status() -> AnalystStatusDto {
             reachable: false,
             models: Vec::new(),
             message: "No local model detected (Ollama not running at 127.0.0.1:11434). \
-                      Deadband works fully without it — the analyst is optional. \
+                      GarmWatch works fully without it — the analyst is optional. \
                       Set it up in Settings \u{2192} Local AI (Ollama)."
                 .to_string(),
         },
@@ -1828,10 +1828,10 @@ async fn explain_latest_alert(
         let chosen = model.filter(|m| !m.trim().is_empty()).or_else(|| {
             http_local("GET", "/api/tags", None, std::time::Duration::from_secs(2))
                 .ok()
-                .and_then(|text| deadband_core::analyst::ollama_model_names(&text).into_iter().next())
+                .and_then(|text| garmwatch_core::analyst::ollama_model_names(&text).into_iter().next())
         });
         let Some(model) = chosen else {
-            return Err("No local model available yet — set one up in Settings \u{2192} Local AI (Ollama); once Ollama is installed, Deadband can download the recommended model for you.".to_string());
+            return Err("No local model available yet — set one up in Settings \u{2192} Local AI (Ollama); once Ollama is installed, GarmWatch can download the recommended model for you.".to_string());
         };
         let alert_summary = {
             let store = store.lock().map_err(|_| "store lock poisoned".to_string())?;
@@ -1841,7 +1841,7 @@ async fn explain_latest_alert(
                 .map(|event| event.summary.clone())
                 .ok_or_else(|| "No alert to explain yet — fire a scenario from the Rules view first.".to_string())?
         };
-        let layer = deadband_core::detect::AnalystLayer { enabled: true };
+        let layer = garmwatch_core::detect::AnalystLayer { enabled: true };
         let client = OllamaClient { model: model.clone() };
         let narrative = {
             let store = store.lock().map_err(|_| "store lock poisoned".to_string())?;
@@ -1852,7 +1852,7 @@ async fn explain_latest_alert(
         };
         // Record a short analyst note in the log and surface it live.
         let preview: String = narrative.chars().take(280).collect();
-        let note = deadband_core::model::Event::new(
+        let note = garmwatch_core::model::Event::new(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs() as i64)
@@ -1889,7 +1889,7 @@ fn recent_events(state: tauri::State<AppState>, limit: i64) -> Vec<EventDto> {
 }
 
 /// Stored events matching a structured log query (see
-/// `deadband_core::query` for the grammar). The UI shows the query
+/// `garmwatch_core::query` for the grammar). The UI shows the query
 /// back to the engineer, so what ran is always inspectable.
 #[tauri::command]
 fn query_events(
@@ -1898,7 +1898,7 @@ fn query_events(
     limit: Option<i64>,
 ) -> Result<Vec<EventDto>, String> {
     let now_s = now_ms() / 1000;
-    let parsed = deadband_core::query::parse(&query, now_s).map_err(|e| e)?;
+    let parsed = garmwatch_core::query::parse(&query, now_s).map_err(|e| e)?;
     let store = state.store.lock().map_err(|_| "store lock poisoned".to_string())?;
     let events = store
         .query_events(&parsed, limit.unwrap_or(200).clamp(1, 500))
@@ -1935,7 +1935,7 @@ async fn translate_query(
         let chosen = model.filter(|m| !m.trim().is_empty()).or_else(|| {
             http_local("GET", "/api/tags", None, std::time::Duration::from_secs(2))
                 .ok()
-                .and_then(|text| deadband_core::analyst::ollama_model_names(&text).into_iter().next())
+                .and_then(|text| garmwatch_core::analyst::ollama_model_names(&text).into_iter().next())
         });
         let Some(model) = chosen else {
             return Err("No local model available — is Ollama running with a model pulled?".to_string());
@@ -1950,7 +1950,7 @@ async fn translate_query(
             .collect::<Vec<_>>()
             .join(", ");
         let prompt = format!(
-            r#"Translate a plain-English log question into a Deadband log query. Reply with ONLY the query, nothing else.
+            r#"Translate a plain-English log question into a GarmWatch log query. Reply with ONLY the query, nothing else.
 
 Grammar (space-separated terms, all must match):
 kind:alert|write|read|discovery|connection|packet|analyst
@@ -1982,7 +1982,7 @@ Question: {question}"#
             .trim()
             .to_string();
         let now_s = now_ms() / 1000;
-        if let Err(err) = deadband_core::query::parse(&cleaned, now_s) {
+        if let Err(err) = garmwatch_core::query::parse(&cleaned, now_s) {
             return Err(format!(
                 "The model answered '{cleaned}', which isn't a valid query ({err}). Try rephrasing, or write the query directly."
             ));
@@ -2005,7 +2005,7 @@ struct DeviceDto {
 /// The simulated plant's roster (ground truth for the lab).
 #[tauri::command]
 fn plant_devices() -> Vec<DeviceDto> {
-    deadband_core::sim::roster()
+    garmwatch_core::sim::roster()
         .iter()
         .map(|device| DeviceDto {
             ip: device.ip.to_string(),
@@ -2056,10 +2056,10 @@ fn network_snapshot(state: tauri::State<AppState>) -> NetworkSnapshot {
     let Ok(store) = state.store.lock() else { return empty };
     let now_s = now_ms() / 1000;
     let score_events = store
-        .events_since(now_s - deadband_core::suspicion::WINDOW_S, 5000)
+        .events_since(now_s - garmwatch_core::suspicion::WINDOW_S, 5000)
         .unwrap_or_default();
     let quarantined = store.quarantined().unwrap_or_default();
-    let scores = deadband_core::suspicion::compute_all(&score_events, &quarantined, now_s);
+    let scores = garmwatch_core::suspicion::compute_all(&score_events, &quarantined, now_s);
     let devices = store
         .list_devices()
         .unwrap_or_default()
@@ -2093,7 +2093,7 @@ fn network_snapshot(state: tauri::State<AppState>) -> NetworkSnapshot {
 
 /// Builds and runs the Tauri application.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-/// One placement suggestion for the Assets view: Deadband's guess at
+/// One placement suggestion for the Assets view: GarmWatch's guess at
 /// what an unplaced device is, with its confidence and receipts.
 #[derive(Serialize)]
 struct PlacementDto {
@@ -2108,7 +2108,7 @@ struct PlacementDto {
 #[tauri::command]
 fn placement_suggestions(state: tauri::State<AppState>) -> Vec<PlacementDto> {
     let store = state.store.lock().unwrap();
-    deadband_core::placement::suggestions(&store)
+    garmwatch_core::placement::suggestions(&store)
         .unwrap_or_default()
         .into_iter()
         .map(|(ip, p)| PlacementDto {
@@ -2133,7 +2133,7 @@ fn apply_placement(
     let addr: std::net::IpAddr = ip.parse().map_err(|_| "bad IP address".to_string())?;
     let placed = {
         let store = state.store.lock().unwrap();
-        match deadband_core::placement::infer(&store, addr)
+        match garmwatch_core::placement::infer(&store, addr)
             .map_err(|e| format!("inference failed: {e}"))?
         {
             Some(p) => {
@@ -2213,8 +2213,8 @@ fn audit_report(app: tauri::AppHandle, state: tauri::State<AppState>, days: u32)
         .events_since(from_s, 100_000)
         .map_err(|e| format!("could not read the trail: {e}"))?;
     let quarantined = store.quarantined().unwrap_or_default();
-    let report = deadband_core::evidence::build_report(&events, &quarantined, from_s, now_s);
-    Ok(deadband_core::evidence::render_html(&report, &os_user()))
+    let report = garmwatch_core::evidence::build_report(&events, &quarantined, from_s, now_s);
+    Ok(garmwatch_core::evidence::render_html(&report, &os_user()))
 }
 
 /// Saves the audit evidence report as a standalone HTML file in
@@ -2248,16 +2248,16 @@ fn save_audit_report(
             .events_since(from_s, 100_000)
             .map_err(|e| format!("could not read the trail: {e}"))?;
         let quarantined = store.quarantined().unwrap_or_default();
-        let report = deadband_core::evidence::build_report(&events, &quarantined, from_s, now_s);
-        deadband_core::evidence::render_html(&report, &os_user())
+        let report = garmwatch_core::evidence::build_report(&events, &quarantined, from_s, now_s);
+        garmwatch_core::evidence::render_html(&report, &os_user())
     };
     let doc = format!(
         "<!DOCTYPE html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">\
-         <title>Deadband audit evidence report</title></head>\
+         <title>GarmWatch audit evidence report</title></head>\
          <body style=\"color:#111;background:#fff;font-family:system-ui,sans-serif\">{fragment}</body></html>"
     );
-    let stamp = deadband_core::evidence::format_ts(now_s).replace([' ', ':'], "-");
-    let filename = format!("deadband-evidence-{stamp}.html");
+    let stamp = garmwatch_core::evidence::format_ts(now_s).replace([' ', ':'], "-");
+    let filename = format!("garmwatch-evidence-{stamp}.html");
     let dir = app
         .path()
         .download_dir()
@@ -2319,7 +2319,7 @@ pub fn run() {
             let file_store = (|| -> Option<Store> {
                 let dir = app.path().app_data_dir().ok()?;
                 std::fs::create_dir_all(&dir).ok()?;
-                Store::open(dir.join("deadband.db")).ok()
+                Store::open(dir.join("garmwatch.db")).ok()
             })();
             let store = file_store
                 .unwrap_or_else(|| Store::open_in_memory().expect("in-memory store"));
@@ -2382,5 +2382,5 @@ pub fn run() {
             pull_model
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Deadband");
+        .expect("error while running GarmWatch");
 }

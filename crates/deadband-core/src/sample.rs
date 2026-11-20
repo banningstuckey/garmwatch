@@ -4,7 +4,7 @@
 //! with one device the plant roster knows nothing about.
 //!
 //! Why it exists: Phase 3's discovery demo must work out of the box,
-//! with no downloads and no licensing questions. Deadband has never
+//! with no downloads and no licensing questions. GarmWatch has never
 //! been told these devices exist and registers nothing in advance —
 //! replaying this capture, the inventory, map, and conduits must all
 //! be *discovered from the wire*, exactly as with a real capture.

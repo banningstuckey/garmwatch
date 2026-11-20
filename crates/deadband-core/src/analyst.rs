@@ -1,6 +1,6 @@
 //! Layer 3 — the optional local LLM analyst (Phase 6).
 //!
-//! On demand, Deadband hands a local model (Ollama on the same
+//! On demand, GarmWatch hands a local model (Ollama on the same
 //! machine) a *digested* incident — the alert, its contributing
 //! factors, and a handful of surrounding events, never a raw packet
 //! firehose — and gets back a plain-English narrative: what happened,
@@ -112,7 +112,7 @@ impl IncidentContext {
 pub fn build_prompt(context: &IncidentContext) -> String {
     let mut prompt = String::new();
     prompt.push_str(
-        "You are the incident analyst inside Deadband, a passive OT (industrial control) \
+        "You are the incident analyst inside GarmWatch, a passive OT (industrial control) \
          network monitor. A detection layer raised the alert below. Write a short incident \
          brief for a plant operator who is not a security specialist.\n\n\
          Use exactly three short sections with these headings:\n\

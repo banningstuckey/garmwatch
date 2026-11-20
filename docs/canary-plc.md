@@ -74,7 +74,7 @@ counts as a touch.
 
 ## How it is built
 
-- `crates/deadband-core/src/canary.rs` — the pure Modbus responder
+- `crates/garmwatch-core/src/canary.rs` — the pure Modbus responder
   (`respond`, testable without a network), the `CanaryServer` (one
   thread per connection, touches via callback), and the alert-event
   builder. 8 tests, including a real TCP round-trip on an ephemeral

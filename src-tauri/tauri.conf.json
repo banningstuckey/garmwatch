@@ -10,7 +10,7 @@
         "label": "main",
         "minHeight": 560,
         "minWidth": 800,
-        "title": "Deadband",
+        "title": "GarmWatch",
         "width": 1440
       }
     ],
@@ -28,11 +28,11 @@
       "icons/128x128@2x.png",
       "icons/icon.png"
     ],
-    "longDescription": "Deadband passively watches OT network traffic, maps it onto the Purdue Model live, and gives early warning when traffic starts to look like an attack. It never transmits into the monitored network.",
+    "longDescription": "GarmWatch passively watches OT network traffic, maps it onto the Purdue Model live, and gives early warning when traffic starts to look like an attack. It never transmits into the monitored network.",
     "shortDescription": "Real-time passive OT network monitor",
     "targets": "all"
   },
-  "identifier": "io.github.banningstuckey.deadband",
-  "productName": "Deadband",
-  "version": "0.1.0"
+  "identifier": "io.github.banningstuckey.garmwatch",
+  "productName": "GarmWatch",
+  "version": "0.3.0"
 }

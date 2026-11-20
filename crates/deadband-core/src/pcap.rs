@@ -1,5 +1,5 @@
 //! PCAP files: the classic libpcap capture format that Wireshark and
-//! tcpdump write. Phase 3 teaches Deadband to eat recordings — the
+//! tcpdump write. Phase 3 teaches GarmWatch to eat recordings — the
 //! same packets a sensor would have seen live, replayed through the
 //! identical pipeline.
 //!
@@ -25,7 +25,7 @@ pub enum PcapError {
     TooShort,
     /// First four bytes are not any known pcap magic.
     BadMagic,
-    /// The capture's link type is not Ethernet (Deadband v1 speaks
+    /// The capture's link type is not Ethernet (GarmWatch v1 speaks
     /// Ethernet captures; Wireshark's default on real interfaces).
     UnsupportedLinkType(u32),
     /// A record header claims more data than the file holds
@@ -125,7 +125,7 @@ pub fn read_pcap(bytes: &[u8]) -> Result<Vec<Packet>, PcapError> {
 }
 
 /// Writes packets as a pcap file (little-endian, microsecond
-/// timestamps) — how Deadband exports captures of its own, and how
+/// timestamps) — how GarmWatch exports captures of its own, and how
 /// the bundled sample capture is produced in tests.
 pub fn write_pcap(packets: &[Packet]) -> Vec<u8> {
     let mut out = Vec::new();

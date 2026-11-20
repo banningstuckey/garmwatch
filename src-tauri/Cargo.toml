@@ -1,15 +1,15 @@
 [package]
-name = "deadband"
+name = "garmwatch"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Deadband — real-time passive OT network monitor (Tauri shell over deadband-core)."
+description = "GarmWatch — real-time passive OT network monitor (Tauri shell over garmwatch-core)."
 
 [lib]
 # Tauri apps build the logic as a library and keep main.rs as a thin entry
 # point (this is also what makes mobile targets possible later).
-name = "deadband_lib"
+name = "garmwatch_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -19,4 +19,4 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-deadband-core = { path = "../crates/deadband-core", features = ["live-capture"] }
+garmwatch-core = { path = "../crates/deadband-core", features = ["live-capture"] }

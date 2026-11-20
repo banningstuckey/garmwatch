@@ -1,4 +1,4 @@
-# Deadband CI/release workflow.
+# GarmWatch CI/release workflow.
 # GitHub Apps cannot create workflow files (missing `workflows`
 # permission), so this ships as a text copy. Activate it once:
 #   mkdir -p .github/workflows
@@ -29,8 +29,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Run deadband-core tests
-        run: cargo test -p deadband-core
+      - name: Run garmwatch-core tests
+        run: cargo test -p garmwatch-core
 
   release:
     name: Release build (${{ matrix.os }})
@@ -56,7 +56,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "Deadband ${{ github.ref_name }}"
-          releaseBody: "See the README for what Deadband does and the five-minute demo. Builds are unsigned in v1: macOS may need right-click → Open the first time; Windows SmartScreen may need More info → Run anyway."
+          releaseName: "GarmWatch ${{ github.ref_name }}"
+          releaseBody: "See the README for what GarmWatch does and the five-minute demo. Builds are unsigned in v1: macOS may need right-click → Open the first time; Windows SmartScreen may need More info → Run anyway."
           releaseDraft: true
           prerelease: false

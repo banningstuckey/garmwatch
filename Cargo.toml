@@ -1,4 +1,4 @@
-# Deadband — Cargo workspace root.
+# GarmWatch — Cargo workspace root.
 #
 # Two members:
 #   crates/deadband-core  — the monitoring engine as a standalone library.
@@ -10,7 +10,7 @@ resolver = "2"
 members = ["crates/deadband-core", "src-tauri"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 authors = ["Banning Stuckey"]

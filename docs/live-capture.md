@@ -1,6 +1,6 @@
 # Live capture (Phase 7)
 
-Deadband watches a real network interface with libpcap and feeds the
+GarmWatch watches a real network interface with libpcap and feeds the
 packets through the same pipeline as the simulation and the replays —
 same parser, same rules layer, same anomaly layer, same analyst. The
 only difference is where the packets come from.
@@ -13,9 +13,9 @@ only difference is where the packets come from.
   run the lab — and the map will discover the real devices on your
   network. This is the fastest way to prove the detection layers work
   on real packets.
-- **In a plant:** the sensor (a small PC running Deadband) plugs into
+- **In a plant:** the sensor (a small PC running GarmWatch) plugs into
   a switch **mirror/SPAN port** or an inline **TAP**. You never touch
-  the devices themselves. One sensor per switch area. Deadband is
+  the devices themselves. One sensor per switch area. GarmWatch is
   passive-only: it reads copies of traffic and never transmits.
 
 ## macOS permission (BPF)
@@ -40,12 +40,12 @@ If Start fails with a permission error, you have two options:
 ## The blind check
 
 A sensor that stops seeing traffic fails silently, and that is the
-most dangerous failure a monitor can have. Deadband watches its own
+most dangerous failure a monitor can have. GarmWatch watches its own
 capture continuously:
 
 - **Flowing** — packets are arriving. Normal.
 - **Gone quiet** — the capture was flowing, then nothing for over a
-  minute. Deadband raises an alert ("Capture has gone quiet") that
+  minute. GarmWatch raises an alert ("Capture has gone quiet") that
   shows in the Events log, the bell and the latest-alert line. Check
   the mirror port / SPAN session first, then the cable.
 - **Sees nothing** — the capture ran a full minute without a single

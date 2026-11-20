@@ -1,6 +1,6 @@
-//! # deadband-core
+//! # garmwatch-core
 //!
-//! The monitoring engine for **Deadband**, a real-time, passive OT
+//! The monitoring engine for **GarmWatch**, a real-time, passive OT
 //! (operational technology) network monitor, as a standalone library.
 //!
 //! The engine is deliberately independent of any UI. The Tauri desktop app
@@ -73,7 +73,7 @@ pub struct EngineStatus {
 /// Later phases add live counters (devices seen, events stored, …).
 pub fn engine_status() -> EngineStatus {
     EngineStatus {
-        name: "Deadband",
+        name: "GarmWatch",
         version: env!("CARGO_PKG_VERSION"),
         phase: "Phase 6 — AI analyst (optional)",
         detection_layers: ["rules", "anomaly", "analyst"],
@@ -87,7 +87,7 @@ mod tests {
     #[test]
     fn status_reports_identity() {
         let status = engine_status();
-        assert_eq!(status.name, "Deadband");
+        assert_eq!(status.name, "GarmWatch");
         assert_eq!(status.detection_layers.len(), 3);
         assert!(status.phase.starts_with("Phase 6"));
     }

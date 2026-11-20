@@ -1,11 +1,11 @@
 # DNP3 support
 
-Deadband's second protocol (Step B on the road to a real product).
+GarmWatch's second protocol (Step B on the road to a real product).
 DNP3 (IEEE 1815) is the SCADA language of small electric and water
-utilities — exactly the sites Deadband exists for — so it was the
+utilities — exactly the sites GarmWatch exists for — so it was the
 first language added after Modbus.
 
-## What Deadband understands
+## What GarmWatch understands
 
 - **Transport:** DNP3 over TCP or UDP, port 20000.
 - **Link layer:** frame start, length, DNP3 source/destination
@@ -75,7 +75,7 @@ output, then sends a cold restart. Four rules catch it.
 - **DNP3 Secure Authentication (SAv5)** challenges are not
   parsed; an SA-protected conversation still yields function
   codes, addresses, and control detection from its outer frame.
-- **Serial DNP3** is not captured (Deadband's sources are
+- **Serial DNP3** is not captured (GarmWatch's sources are
   Ethernet); serial-to-Ethernet terminal servers make most
   serial segments visible as TCP/UDP anyway.
 - Point-level profiles (which DNP3 points change, their value

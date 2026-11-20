@@ -224,7 +224,7 @@ pub fn compute_all(
             if let Some(mark) = ignore {
                 if saved > 0 {
                     factors.push((
-                        format!("Ignored by {} — earlier signals halved (Deadband is still watching)", mark.user),
+                        format!("Ignored by {} — earlier signals halved (GarmWatch is still watching)", mark.user),
                         -saved,
                     ));
                 }
@@ -315,7 +315,7 @@ mod tests {
         let mut ignore = Event::new(
             NOW - 3000,
             EventKind::OperatorAction,
-            format!("Ignored actor {laptop} — marked known/expected by banning. Deadband keeps watching it; later alerts count at full weight."),
+            format!("Ignored actor {laptop} — marked known/expected by banning. GarmWatch keeps watching it; later alerts count at full weight."),
         );
         ignore.src_ip = None;
         let events = vec![

@@ -46,7 +46,7 @@
     <img id="splash-logo" src="./assets/deadband-logo.jpg" alt="Deadband"
          onerror="var s=document.getElementById('splash'); if(s) s.remove();">
     <p class="splash-sub">Real-time passive OT network monitor</p>
-    <p class="splash-version" id="splash-version">Deadband v0.2.4</p>
+    <p class="splash-version" id="splash-version">Deadband v0.2.5</p>
   </div>
   <div class="shell">
     <nmui-navigation rail expanded id="rail">
@@ -69,7 +69,7 @@
     <main>
       <div class="page-head">
         <headline medium id="page-title">Live map</headline>
-        <span class="phase-tag">Phase 6 — AI analyst (optional)</span>
+        <span class="phase-tag">Passive OT intrusion monitor — it watches, it never touches</span>
         <div class="alert-bell-wrap">
           <button class="alert-bell" id="alert-bell" aria-label="Alerts" title="Alerts">
             <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 0 0 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 0 0-3 0v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" fill="currentColor"/></svg>
@@ -191,137 +191,10 @@
       </section>
 
       <section id="view-events" class="view" hidden>
-        <nmui-card outlined>
-          <h2 class="card-title">Simulated plant feed</h2>
-          <p id="sim-status" class="sim-status">Simulation stopped · 0 devices · 0 events stored</p>
-          <div class="card-actions">
-            <nmui-button filled id="btn-start">Start simulation</nmui-button>
-            <nmui-button outlined id="btn-stop">Stop</nmui-button>
-          </div>
-        </nmui-card>
-
-        <nmui-card outlined>
-          <h2 class="card-title">Replay a capture (PCAP)</h2>
-          <p>Feed the pipeline a recording instead of the live plant — the same
-          detection path, exercised on traffic Deadband has never seen. Devices in
-          the capture are <strong>discovered from the wire</strong>: watch the map's
-          UNPLACED strip and the Assets view.</p>
-          <p id="replay-status" class="sim-status">No replay running</p>
-          <div class="card-actions replay-controls">
-            <nmui-button filled id="btn-replay-sample">Replay sample capture</nmui-button>
-            <label class="replay-speed">Speed
-              <select id="replay-speed">
-                <option value="1">1× real time</option>
-                <option value="4">4×</option>
-                <option value="20" selected>20×</option>
-                <option value="100">100×</option>
-              </select>
-            </label>
-            <nmui-button outlined id="btn-replay-stop">Stop replay</nmui-button>
-          </div>
-          <div class="replay-file">
-            <input id="replay-path" class="text-input" type="text" spellcheck="false"
-              placeholder="…or a .pcap from your Wireshark lab — paste its full path, e.g. /Users/you/captures/lab.pcap">
-            <nmui-button tonal id="btn-replay-file">Replay file</nmui-button>
-          </div>
-          <p class="dim">The bundled sample is ~75 s from a foreign plant
-          (192.168.50.0/24) that Deadband knows nothing about — including one
-          device that does not belong. See if you can spot it in the log before
-          Phase 4's rules learn to shout about it.</p>
-        </nmui-card>
-
-        <nmui-card outlined>
-          <h2 class="card-title">Live capture (Phase 7)</h2>
-          <p>Watch this Mac's own network live — real packets from a real interface,
-          through the same pipeline as the simulation and the replays. In a plant
-          the sensor plugs into a switch mirror/SPAN port; in the lab, your own
-          interface is enough to see your own traffic and prove the detection
-          layers work on the real thing.</p>
-          <p id="capture-status" class="sim-status">Live capture is off</p>
-          <div class="card-actions replay-controls">
-            <label class="replay-speed">Interface
-              <select id="capture-interface"></select>
-            </label>
-            <nmui-button filled id="btn-capture-start">Start live capture</nmui-button>
-            <nmui-button outlined id="btn-capture-stop">Stop</nmui-button>
-          </div>
-          <p class="dim">Starting capture stops the simulation and any replay — one feed at a time.
-          Drop counts are shown, never hidden: if packets are being dropped, the sensor
-          is overloaded and the numbers will say so.</p>
-          <p class="dim" id="capture-quiet" hidden></p>
-          <p class="dim">If starting fails with a permission error, the Mac needs BPF access:
-          join the access_bpf group, or run with sudo for a lab test — see docs/live-capture.md.</p>
-        </nmui-card>
-
-        <nmui-card outlined>
-          <h2 class="card-title">Canary PLC</h2>
-          <p>A fake controller that nothing legitimate ever talks to — it is not
-          in the real plant's inventory, no HMI polls it, no historian reads it.
-          It answers Modbus requests with plausible fake values, and every
-          connection, every request, is an intruder by definition: no baseline,
-          no false positives. A touch shows up in the log below as an alert,
-          and the visitor joins the map as an unknown device.</p>
-          <p id="canary-status" class="sim-status">Canary is off</p>
-          <div class="card-actions replay-controls">
-            <label class="replay-speed">Listen on
-              <input id="canary-bind" class="text-input canary-bind" type="text" value="0.0.0.0" spellcheck="false" aria-label="Address to listen on">
-            </label>
-            <label class="replay-speed">Port
-              <input id="canary-port" class="text-input canary-port" type="number" value="502" min="1" max="65535" aria-label="Port to listen on">
-            </label>
-            <nmui-button filled id="btn-canary-start">Start canary</nmui-button>
-            <nmui-button outlined id="btn-canary-stop">Stop</nmui-button>
-          </div>
-          <p class="dim">The canary is not a feed — it runs alongside the simulation, a replay,
-          or live capture. Ports below 1024 need admin rights: if 502 refuses, run
-          with sudo for a lab test or use port 1502. macOS may ask to allow incoming
-          connections the first time. See docs/canary-plc.md.</p>
-          <p class="dim" id="canary-touched" hidden></p>
-        </nmui-card>
-
-        <nmui-card class="panel" variant="outlined">
-          <div class="panel-title">Maintenance window</div>
-          <p class="dim" id="maintenance-status">No maintenance window open.</p>
-          <div class="row">
-            <label class="capture-label" for="maintenance-minutes">Window</label>
-            <select id="maintenance-minutes" class="native-select">
-              <option value="30">30 minutes</option>
-              <option value="60" selected>1 hour</option>
-              <option value="120">2 hours</option>
-              <option value="240">4 hours</option>
-            </select>
-            <nmui-button id="btn-maintenance-start" variant="filled">Start window</nmui-button>
-            <nmui-button id="btn-maintenance-stop" variant="outlined">End now</nmui-button>
-          </div>
-          <p class="dim">Open a window while an engineer is legitimately working on the plant: their traffic stops training the anomaly detector, and the alert badge stays quiet. Nothing is hidden — everything is still recorded, alerts raised during the window are marked “Maintenance window”, and starting or ending a window is itself logged, with who did it.</p>
-        </nmui-card>
-
-        <nmui-card class="panel" variant="outlined">
-          <div class="panel-title">Daily triage — the last 24 hours</div>
-          <ol class="triage-list" id="triage-list"></ol>
-          <p class="dim" id="triage-counts"></p>
-          <div class="row">
-            <nmui-button id="btn-triage-explain" variant="outlined">Explain today (local AI)</nmui-button>
-          </div>
-          <div id="triage-narrative" class="analyst-output" hidden></div>
-          <p class="dim">The day ranked by what needs your eyes: canary touches first, then whoever is held in quarantine, the highest suspicion scores, vouches, and windows. The list is computed from the log; the AI brief is optional and only narrates it.</p>
-        </nmui-card>
-
-        <nmui-card class="panel" variant="outlined">
-          <div class="panel-title">Audit evidence</div>
-          <p class="dim">One click builds the printable report over the audit trail — every operator action with its attribution, every alert, who is held in quarantine, and every Ignore with what the actor did afterwards. The kind of packet an auditor (NERC CIP, IEC 62443) or an investigator asks for. Generating a report is itself recorded in the trail.</p>
-          <div class="row">
-            <select id="evidence-window" class="query-select" aria-label="Report window">
-              <option value="1">Last 24 hours</option>
-              <option value="7" selected>Last 7 days</option>
-              <option value="30">Last 30 days</option>
-              <option value="0">All stored history</option>
-            </select>
-            <nmui-button id="btn-evidence-generate" variant="filled">Generate report</nmui-button>
-            <nmui-button id="btn-evidence-print" variant="outlined" hidden>Print / save PDF</nmui-button>
-          </div>
-          <div id="evidence-report"></div>
-        </nmui-card>
+        <div class="events-group">
+          <h3 class="events-group-title">Watch</h3>
+          <p class="dim">The record of what is happening — the log itself, and the day ranked by what needs your eyes.</p>
+        </div>
 
         <nmui-card outlined class="log-card">
           <h2 class="card-title">Live event log</h2>
@@ -361,6 +234,130 @@
           <div id="event-log" class="event-log">
             <p class="dim" id="log-empty">No events yet — start the simulation and Modbus traffic will stream in here.</p>
           </div>
+        </nmui-card>
+
+        <nmui-card class="panel" variant="outlined">
+          <div class="panel-title">Daily triage — the last 24 hours</div>
+          <ol class="triage-list" id="triage-list"></ol>
+          <p class="dim" id="triage-counts"></p>
+          <div class="row">
+            <nmui-button id="btn-triage-explain" variant="outlined">Explain today (local AI)</nmui-button>
+          </div>
+          <div id="triage-narrative" class="analyst-output" hidden></div>
+          <p class="dim">The last 24 hours ranked by what needs your eyes — canary touches first. The AI brief only narrates the list.</p>
+        </nmui-card>
+        <div class="events-group">
+          <h3 class="events-group-title">Reports</h3>
+          <p class="dim">Documents you generate on purpose — for an auditor, an investigator, or your own files.</p>
+        </div>
+
+        <nmui-card class="panel" variant="outlined">
+          <div class="panel-title">Audit evidence</div>
+          <p class="dim">The printable audit packet: every operator action with who did it, every alert, who is held, and every Ignore with what happened after. Generating one is itself recorded.</p>
+          <div class="row">
+            <select id="evidence-window" class="query-select" aria-label="Report window">
+              <option value="1">Last 24 hours</option>
+              <option value="7" selected>Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="0">All stored history</option>
+            </select>
+            <nmui-button id="btn-evidence-generate" variant="filled">Generate report</nmui-button>
+            <nmui-button id="btn-evidence-save" variant="outlined" hidden>Open / save as file</nmui-button>
+            <nmui-button id="btn-evidence-clear" variant="outlined" hidden>Clear</nmui-button>
+          </div>
+          <p class="dim" id="evidence-saved" hidden></p>
+          <div id="evidence-report"></div>
+        </nmui-card>
+        <div class="events-group">
+          <h3 class="events-group-title">Controls</h3>
+          <p class="dim">Start and stop Deadband’s eyes, its decoy, and its learning. Nothing here touches the plant network.</p>
+        </div>
+        <p class="events-sub">The real network</p>
+
+        <nmui-card outlined>
+          <h2 class="card-title">Live capture</h2>
+          <p class="dim">Watch this computer's own network live, through the same pipeline. In a plant, the sensor plugs into a switch mirror/SPAN port.</p>
+          <p id="capture-status" class="sim-status">Live capture is off</p>
+          <div class="card-actions replay-controls">
+            <label class="replay-speed">Interface
+              <select id="capture-interface"></select>
+            </label>
+            <nmui-button filled id="btn-capture-start">Start live capture</nmui-button>
+            <nmui-button outlined id="btn-capture-stop">Stop</nmui-button>
+          </div>
+          <p class="dim">Starting capture stops the simulation and any replay — one feed at a time. Dropped-packet counts are shown, never hidden.</p>
+          <p class="dim" id="capture-quiet" hidden></p>
+          <p class="dim">If starting fails with a permission error, the Mac needs BPF access:
+          join the access_bpf group, or run with sudo for a lab test — see docs/live-capture.md.</p>
+        </nmui-card>
+
+        <nmui-card outlined>
+          <h2 class="card-title">Canary PLC</h2>
+          <p class="dim">A fake controller that nothing legitimate ever talks to. Any touch is an intruder by definition — it lands in the log as an alert and the visitor appears on the map.</p>
+          <p id="canary-status" class="sim-status">Canary is off</p>
+          <div class="card-actions replay-controls">
+            <label class="replay-speed">Listen on
+              <input id="canary-bind" class="text-input canary-bind" type="text" value="0.0.0.0" spellcheck="false" aria-label="Address to listen on">
+            </label>
+            <label class="replay-speed">Port
+              <input id="canary-port" class="text-input canary-port" type="number" value="502" min="1" max="65535" aria-label="Port to listen on">
+            </label>
+            <nmui-button filled id="btn-canary-start">Start canary</nmui-button>
+            <nmui-button outlined id="btn-canary-stop">Stop</nmui-button>
+          </div>
+          <p class="dim">Not a feed — it runs alongside any of them. Ports below 1024 need admin rights: if 502 refuses, use port 1502 for a lab test. See docs/canary-plc.md.</p>
+          <p class="dim" id="canary-touched" hidden></p>
+        </nmui-card>
+
+        <nmui-card class="panel" variant="outlined">
+          <div class="panel-title">Maintenance window</div>
+          <p class="dim" id="maintenance-status">No maintenance window open.</p>
+          <div class="row">
+            <label class="capture-label" for="maintenance-minutes">Window</label>
+            <select id="maintenance-minutes" class="native-select">
+              <option value="30">30 minutes</option>
+              <option value="60" selected>1 hour</option>
+              <option value="120">2 hours</option>
+              <option value="240">4 hours</option>
+            </select>
+            <nmui-button id="btn-maintenance-start" variant="filled">Start window</nmui-button>
+            <nmui-button id="btn-maintenance-stop" variant="outlined">End now</nmui-button>
+          </div>
+          <p class="dim">While a window is open, an engineer's legitimate work stops training the anomaly detector; alerts are marked, never hidden. Starting or ending a window is logged, with who did it.</p>
+        </nmui-card>
+        <p class="events-sub">The lab — practice data, nothing real at stake</p>
+        <nmui-card outlined>
+          <h2 class="card-title">Simulated plant feed</h2>
+          <p id="sim-status" class="sim-status">Simulation stopped · 0 devices · 0 events stored</p>
+          <p class="dim">A fake plant that lives inside Deadband and generates practice traffic — nothing real is touched.</p>
+          <div class="card-actions">
+            <nmui-button filled id="btn-start">Start simulation</nmui-button>
+            <nmui-button outlined id="btn-stop">Stop</nmui-button>
+          </div>
+        </nmui-card>
+
+        <nmui-card outlined>
+          <h2 class="card-title">Replay a capture (PCAP)</h2>
+          <p class="dim">Play a recorded capture through the same detection pipeline — practice on traffic Deadband has never seen. Devices are discovered from the wire.</p>
+          <p id="replay-status" class="sim-status">No replay running</p>
+          <div class="card-actions replay-controls">
+            <nmui-button filled id="btn-replay-sample">Replay sample capture</nmui-button>
+            <label class="replay-speed">Speed
+              <select id="replay-speed">
+                <option value="1">1× real time</option>
+                <option value="4">4×</option>
+                <option value="20" selected>20×</option>
+                <option value="100">100×</option>
+              </select>
+            </label>
+            <nmui-button outlined id="btn-replay-stop">Stop replay</nmui-button>
+          </div>
+          <div class="replay-file">
+            <input id="replay-path" class="text-input" type="text" spellcheck="false"
+              placeholder="…or a .pcap from your Wireshark lab — paste its full path, e.g. /Users/you/captures/lab.pcap">
+            <nmui-button tonal id="btn-replay-file">Replay file</nmui-button>
+          </div>
+          <p class="dim">The bundled sample is ~75 s from an unknown plant (192.168.50.0/24) — with one device that does not belong. See if you can spot it in the log.</p>
         </nmui-card>
       </section>
 
@@ -537,7 +534,7 @@
         </nmui-card>
       </section>
 
-      <footer class="note">Deadband v0.2.4 · UI: nmui v0.43.7, vendored and pinned (ui/vendor/nmui) · Themes selectable in Settings</footer>
+      <footer class="note">Deadband v0.2.5 · UI: nmui v0.43.7, vendored and pinned (ui/vendor/nmui) · Themes selectable in Settings</footer>
     </main>
   </div>
 
@@ -1142,20 +1139,41 @@
   }
   const triageNarrativeEl = document.getElementById('triage-narrative');
   const evidenceReportEl = document.getElementById('evidence-report');
-  const evidencePrintBtn = document.getElementById('btn-evidence-print');
+  const evidenceSaveBtn = document.getElementById('btn-evidence-save');
+  const evidenceClearBtn = document.getElementById('btn-evidence-clear');
+  const evidenceSavedEl = document.getElementById('evidence-saved');
   document.getElementById('btn-evidence-generate').addEventListener('click', async () => {
     if (!invoke || !evidenceReportEl) return;
     const days = Number(document.getElementById('evidence-window').value || 7);
     evidenceReportEl.innerHTML = '<p class="dim">Building the report…</p>';
     try {
       evidenceReportEl.innerHTML = await invoke('audit_report', { days });
-      evidencePrintBtn.hidden = false;
+      evidenceSaveBtn.hidden = false;
+      evidenceClearBtn.hidden = false;
       loadBacklog();
     } catch (err) {
       evidenceReportEl.innerHTML = '<p class="dim">Could not build the report: ' + String(err) + '</p>';
     }
   });
-  evidencePrintBtn.addEventListener('click', () => window.print());
+  evidenceSaveBtn.addEventListener('click', async () => {
+    if (!invoke) return;
+    const days = Number(document.getElementById('evidence-window').value || 7);
+    try {
+      const path = await invoke('save_audit_report', { days });
+      evidenceSavedEl.textContent = 'Saved to ' + path + ' and opened in your browser — print or save a PDF from there.';
+      evidenceSavedEl.hidden = false;
+      loadBacklog();
+    } catch (err) {
+      evidenceSavedEl.textContent = 'Could not save the report: ' + String(err);
+      evidenceSavedEl.hidden = false;
+    }
+  });
+  evidenceClearBtn.addEventListener('click', () => {
+    evidenceReportEl.innerHTML = '';
+    evidenceSaveBtn.hidden = true;
+    evidenceClearBtn.hidden = true;
+    evidenceSavedEl.hidden = true;
+  });
 
   document.getElementById('btn-triage-explain').addEventListener('click', async () => {
     if (!triageNarrativeEl) return;

@@ -2217,6 +2217,84 @@ fn audit_report(app: tauri::AppHandle, state: tauri::State<AppState>, days: u32)
     Ok(deadband_core::evidence::render_html(&report, &os_user()))
 }
 
+/// Saves the audit evidence report as a standalone HTML file in
+/// the user's Downloads folder and opens it in their browser —
+/// the in-webview print path does nothing on macOS, and a real
+/// browser prints / saves PDF properly. The save is itself
+/// recorded (meta-audit) before the report is built, like a
+/// generation. Returns the saved path.
+#[tauri::command]
+fn save_audit_report(
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+    days: u32,
+) -> Result<String, String> {
+    let days = days.min(3650);
+    let window_label = if days == 0 {
+        "all stored history".to_string()
+    } else {
+        format!("the last {days} day(s)")
+    };
+    record_operator_event(
+        &app,
+        &state.store,
+        format!("Audit evidence report saved to a file by {} — window: {window_label}.", os_user()),
+    );
+    let now_s = now_ms() / 1000;
+    let from_s = if days == 0 { 0 } else { now_s - i64::from(days) * 86_400 };
+    let fragment = {
+        let store = state.store.lock().map_err(|_| "store busy".to_string())?;
+        let events = store
+            .events_since(from_s, 100_000)
+            .map_err(|e| format!("could not read the trail: {e}"))?;
+        let quarantined = store.quarantined().unwrap_or_default();
+        let report = deadband_core::evidence::build_report(&events, &quarantined, from_s, now_s);
+        deadband_core::evidence::render_html(&report, &os_user())
+    };
+    let doc = format!(
+        "<!DOCTYPE html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <title>Deadband audit evidence report</title></head>\
+         <body style=\"color:#111;background:#fff;font-family:system-ui,sans-serif\">{fragment}</body></html>"
+    );
+    let stamp = deadband_core::evidence::format_ts(now_s).replace([' ', ':'], "-");
+    let filename = format!("deadband-evidence-{stamp}.html");
+    let dir = app
+        .path()
+        .download_dir()
+        .or_else(|_| app.path().app_data_dir())
+        .map_err(|e| format!("no folder to save into: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("could not create the save folder: {e}"))?;
+    let path = dir.join(filename);
+    std::fs::write(&path, doc).map_err(|e| format!("could not write the report file: {e}"))?;
+    let path_string = path.to_string_lossy().to_string();
+    open_path(&path_string);
+    Ok(path_string)
+}
+
+/// Opens a local file with the OS default handler. Used for the
+/// saved evidence report (a browser opens .html files).
+fn open_path(path: &str) {
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("open");
+        c.arg(path);
+        c
+    };
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/C", "start", "", path]);
+        c
+    };
+    #[cfg(target_os = "linux")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("xdg-open");
+        c.arg(path);
+        c
+    };
+    let _ = cmd.spawn();
+}
+
 /// Records a settings change the UI owns (its settings live in
 /// the webview). The action vocabulary is a fixed allowlist —
 /// the shell writes the summary, never the caller.
@@ -2298,6 +2376,7 @@ pub fn run() {
             daily_triage,
             explain_triage,
             audit_report,
+            save_audit_report,
             record_ui_action,
             open_external,
             pull_model

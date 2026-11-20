@@ -173,11 +173,11 @@ pub fn render_html(report: &EvidenceReport, generated_by: &str) -> String {
     let mut out = String::new();
     out.push_str(
         "<style>\
-         .ev-doc{font:14px/1.5 system-ui,sans-serif;color:#111;max-width:820px}\
+         .ev-doc{font:14px/1.5 system-ui,sans-serif;max-width:820px}\
          .ev-doc h2{margin:0 0 2px}.ev-doc h3{margin:22px 0 6px}\
          .ev-doc table{border-collapse:collapse;width:100%}\
-         .ev-doc td,.ev-doc th{border:1px solid #bbb;padding:4px 8px;text-align:left;vertical-align:top}\
-         .ev-doc .ev-meta{color:#444}.ev-doc .ev-flag{font-weight:700}\
+         .ev-doc td,.ev-doc th{border:1px solid #999;padding:4px 8px;text-align:left;vertical-align:top}\
+         .ev-doc .ev-meta{opacity:.75}.ev-doc .ev-flag{font-weight:700}\
          </style><div class=\"ev-doc\">",
     );
     out.push_str("<h2>Deadband — audit evidence report</h2>");

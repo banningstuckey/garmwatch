@@ -34,8 +34,14 @@ anything else is itself visible.
 ## The report
 
 Pick a window (24 hours / 7 days / 30 days / all stored
-history), click **Generate report**, then **Print / save PDF**
-for paper or a PDF. Sections:
+history) and click **Generate report** to read it in the app —
+it follows your theme, so it stays readable on screen. For
+paper or a file, click **Open / save as file**: the report is
+written as a standalone HTML page in your Downloads folder and
+opened in your browser, where Print / Save-as-PDF works
+properly. (The app's webview cannot print on macOS — that is
+why the file route exists.) **Clear** empties the on-screen
+report. Sections:
 
 1. **Header** — when it was generated, by whom, the window, and
    the counts (events, alerts, operator actions, canary

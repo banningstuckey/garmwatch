@@ -46,15 +46,18 @@ report. Sections:
 1. **Header** — when it was generated, by whom, the window, and
    the counts (events, alerts, operator actions, canary
    touches, new devices).
-2. **Held in quarantine now** — who ordered each hold and when.
-3. **Ignores (vouches) and what happened after** — every Ignore
+2. **Record integrity** — the hash chain's verdict over the
+   whole stored log (see below), with the current chain head
+   fingerprint. This section frames everything after it.
+3. **Held in quarantine now** — who ordered each hold and when.
+4. **Ignores (vouches) and what happened after** — every Ignore
    with its attribution, followed forward: an actor that stayed
    quiet is a clean vouch; one that alerted afterwards is
    flagged with the count and the heaviest signal. This is the
    section that answers "who vouched for the machine that later
    misbehaved?"
-4. **Operator actions** — the audit trail itself, oldest first.
-5. **Alerts** — every alert in the window.
+5. **Operator actions** — the audit trail itself, oldest first.
+6. **Alerts** — every alert in the window.
 
 ## What it is for
 
@@ -67,12 +70,49 @@ report. Sections:
   rewrite about the past (see the record-security design in
   the project plan).
 
+## Record integrity — the hash chain
+
+Every record in the event log is hash-chained (since v0.3.2):
+each row carries the fingerprint of the record before it plus
+its own, so editing, deleting, or reordering history breaks
+the chain at exactly the point of tampering. Every report opens
+with a **Record integrity** section stating the result of
+walking the whole stored log — intact (with the current chain
+head fingerprint), broken (with the record it broke at), or
+unverifiable — before anything else in the report is read.
+
+The chain is deliberately specified so anyone can check it
+without GarmWatch:
+
+- Algorithm: SHA-256, lowercase hex.
+- A record's fingerprint is the SHA-256 of these fields joined
+  by newlines, in this order: the predecessor's fingerprint,
+  the record id, the Unix timestamp (seconds), the kind tag,
+  the source IP (empty when none), the destination IP (empty
+  when none), the summary text.
+- The first chained record's predecessor is the fixed marker
+  `garmwatch-audit-chain-v1:genesis`.
+- Records written before the chain existed carry no
+  fingerprint. Reports count them openly as pre-chain records;
+  they are never silently treated as verified.
+- Clearing stored data restarts the chain from the genesis
+  marker, and — as before — the clear itself is the first
+  record of the fresh trail. What a clear erases can still be
+  bounded by any report filed before it: that is what the
+  anchor is for.
+
+File reports periodically. A report's chain head pins the
+whole history up to that moment; a later report that verifies
+over the same records proves none of them changed in between.
+
 ## Honest limits
 
 - Identity is the OS user on the sensor — the app has no login
   system; if named accounts ever exist, they plug into the
   same stamp.
-- The store is plain SQLite today; the hash-chained,
-  tamper-evident journal is designed (record-security rules)
-  but not yet implemented. Until then, the exported report is
-  the anchor — generate and file them periodically.
+- The chain proves the log was not altered *after* a record
+  was written. It cannot prove a record was true when written,
+  and an attacker who owns the sensor machine outright can
+  recompute a whole chain from scratch — the defence against
+  that is the filed report: a recomputed chain cannot reproduce
+  a head fingerprint that was already filed somewhere else.

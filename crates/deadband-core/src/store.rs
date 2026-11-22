@@ -14,7 +14,7 @@
 
 use crate::model::{Device, DeviceRole, Event, EventKind, PurdueLevel};
 use crate::profile::{mix_from_str, mix_to_string, DeviceProfile, ProfileRecorder, RegisterStat};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::fmt;
@@ -53,6 +53,81 @@ pub struct Store {
     profile_dirty: RefCell<HashSet<IpAddr>>,
     /// Observations since open (drives the flush cadence).
     profile_ops: Cell<u64>,
+}
+
+/// The `prev_hash` of the first chained record: a fixed marker,
+/// not the hash of anything, so a verifier can recognise where a
+/// chain begins (at install, or after a data clear restarts it).
+pub const CHAIN_GENESIS: &str = "garmwatch-audit-chain-v1:genesis";
+
+/// The outcome of walking the audit chain (see `Store::verify_chain`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChainVerification {
+    /// Every row in the events table.
+    pub total_records: usize,
+    /// Rows written before the chain existed (NULL hash) that sit
+    /// before the chain starts. They are reported, never hidden —
+    /// and never silently treated as chained.
+    pub pre_chain_records: usize,
+    /// Rows carrying a verified chain link.
+    pub chained_records: usize,
+    /// True when every chained row's fingerprint matches its
+    /// content and its predecessor.
+    pub ok: bool,
+    /// The first record where verification failed, when it did.
+    pub break_id: Option<i64>,
+    /// Why verification failed, in plain language.
+    pub break_reason: Option<String>,
+    /// Fingerprint of the newest chained record — the anchor a
+    /// filed evidence report pins down.
+    pub head: Option<String>,
+}
+
+impl ChainVerification {
+    /// A store with nothing chained yet (fresh install, fresh clear).
+    pub fn empty() -> ChainVerification {
+        ChainVerification {
+            total_records: 0,
+            pre_chain_records: 0,
+            chained_records: 0,
+            ok: true,
+            break_id: None,
+            break_reason: None,
+            head: None,
+        }
+    }
+
+    /// Verification itself could not run (a storage failure) — the
+    /// report must say so rather than claim the chain is intact.
+    pub fn unavailable(reason: String) -> ChainVerification {
+        ChainVerification {
+            total_records: 0,
+            pre_chain_records: 0,
+            chained_records: 0,
+            ok: false,
+            break_id: None,
+            break_reason: Some(reason),
+            head: None,
+        }
+    }
+}
+
+/// One record's chain fingerprint: SHA-256 over its predecessor's
+/// fingerprint and the record's own stored fields, newline-joined.
+/// The format is part of the evidence contract — it is written
+/// down in docs/audit-evidence.md so anyone can recompute it.
+fn chain_hash(
+    prev_hash: &str,
+    id: i64,
+    timestamp: i64,
+    kind: &str,
+    src_ip: &str,
+    dst_ip: &str,
+    summary: &str,
+) -> String {
+    crate::sha256::sha256_hex(&format!(
+        "{prev_hash}\n{id}\n{timestamp}\n{kind}\n{src_ip}\n{dst_ip}\n{summary}"
+    ))
 }
 
 impl Store {
@@ -117,7 +192,9 @@ impl Store {
                 kind      TEXT NOT NULL,
                 src_ip    TEXT,
                 dst_ip    TEXT,
-                summary   TEXT NOT NULL
+                summary   TEXT NOT NULL,
+                prev_hash TEXT,
+                hash      TEXT
             );
 
             CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events (timestamp);
@@ -154,6 +231,21 @@ impl Store {
             );
             ",
         )?;
+        // Hash-chain columns (v0.3.2): databases written before the
+        // chain existed gain them in place. Their existing rows keep
+        // NULL hashes — verification reports them honestly as
+        // pre-chain records rather than folding them in on trust.
+        let has_hash: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('events') WHERE name = 'hash'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_hash == 0 {
+            self.conn.execute_batch(
+                "ALTER TABLE events ADD COLUMN prev_hash TEXT;
+                 ALTER TABLE events ADD COLUMN hash TEXT;",
+            )?;
+        }
         Ok(())
     }
 
@@ -406,20 +498,141 @@ impl Store {
         Ok(self.conn.query_row("SELECT COUNT(*) FROM devices", [], |row| row.get(0))?)
     }
 
-    /// Appends an event to the log. Returns its row id.
+    /// Appends an event to the log, chained to the record before
+    /// it (see `verify_chain`). Returns its row id.
+    ///
+    /// The fingerprint covers the row id, so it can only be
+    /// computed after the insert: the row lands with its
+    /// predecessor's fingerprint, then its own is set — both on
+    /// this one connection, and every caller of the store writes
+    /// through the app's single store lock, so the chain cannot
+    /// fork.
     pub fn record_event(&self, event: &Event) -> Result<i64> {
+        let kind = event_kind_tag(&event.kind);
+        let src_ip = event.src_ip.map(|ip| ip.to_string());
+        let dst_ip = event.dst_ip.map(|ip| ip.to_string());
+        let prev_hash: String = self
+            .conn
+            .query_row(
+                "SELECT hash FROM events WHERE hash IS NOT NULL ORDER BY id DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?
+            .unwrap_or_else(|| CHAIN_GENESIS.to_string());
         self.conn.execute(
-            "INSERT INTO events (timestamp, kind, src_ip, dst_ip, summary)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO events (timestamp, kind, src_ip, dst_ip, summary, prev_hash)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 event.timestamp,
-                event_kind_tag(&event.kind),
-                event.src_ip.map(|ip| ip.to_string()),
-                event.dst_ip.map(|ip| ip.to_string()),
+                kind,
+                src_ip,
+                dst_ip,
                 event.summary,
+                prev_hash,
             ],
         )?;
-        Ok(self.conn.last_insert_rowid())
+        let id = self.conn.last_insert_rowid();
+        let hash = chain_hash(
+            &prev_hash,
+            id,
+            event.timestamp,
+            kind,
+            src_ip.as_deref().unwrap_or(""),
+            dst_ip.as_deref().unwrap_or(""),
+            &event.summary,
+        );
+        self.conn.execute(
+            "UPDATE events SET hash = ?1 WHERE id = ?2",
+            params![hash, id],
+        )?;
+        Ok(id)
+    }
+
+    /// Walks the whole event log in order and checks the hash
+    /// chain: every chained record's stored fingerprint must equal
+    /// the recomputed one, and each record must name its actual
+    /// predecessor. An edited record fails the first check; a
+    /// deleted or reordered one fails the second. Records written
+    /// before the chain existed are counted as pre-chain, never
+    /// silently passed.
+    pub fn verify_chain(&self) -> Result<ChainVerification> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, timestamp, kind, src_ip, dst_ip, summary, prev_hash, hash
+             FROM events ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, Option<String>>(6)?,
+                row.get::<_, Option<String>>(7)?,
+            ))
+        })?;
+        let mut result = ChainVerification::empty();
+        let mut started = false;
+        let mut expected_prev = CHAIN_GENESIS.to_string();
+        for row in rows {
+            let (id, timestamp, kind, src_ip, dst_ip, summary, prev_hash, hash) = row?;
+            result.total_records += 1;
+            let (prev_hash, hash) = match (prev_hash, hash) {
+                (Some(p), Some(h)) => (p, h),
+                _ => {
+                    if started {
+                        result.ok = false;
+                        result.break_id = Some(id);
+                        result.break_reason = Some(
+                            "this record carries no chain fingerprint but sits after the \
+                             chain started — it was written outside the chain or stripped \
+                             of its fingerprint"
+                                .to_string(),
+                        );
+                        return Ok(result);
+                    }
+                    result.pre_chain_records += 1;
+                    continue;
+                }
+            };
+            started = true;
+            if prev_hash != expected_prev {
+                result.ok = false;
+                result.break_id = Some(id);
+                result.break_reason = Some(
+                    "this record's predecessor fingerprint does not match the record \
+                     before it — a record was deleted, inserted, or reordered"
+                        .to_string(),
+                );
+                return Ok(result);
+            }
+            let recomputed = chain_hash(
+                &prev_hash,
+                id,
+                timestamp,
+                &kind,
+                src_ip.as_deref().unwrap_or(""),
+                dst_ip.as_deref().unwrap_or(""),
+                &summary,
+            );
+            if recomputed != hash {
+                result.ok = false;
+                result.break_id = Some(id);
+                result.break_reason = Some(
+                    "this record's content no longer matches the fingerprint taken \
+                     when it was written — the record was altered"
+                        .to_string(),
+                );
+                return Ok(result);
+            }
+            result.chained_records += 1;
+            // The next record must name THIS record's fingerprint.
+            expected_prev = hash.clone();
+            result.head = Some(hash);
+        }
+        Ok(result)
     }
 
     /// Number of stored events.
@@ -854,5 +1067,144 @@ mod tests {
         assert_eq!(recent.len(), 2);
         assert_eq!(recent[0].summary, "second");
         assert_eq!(recent[1].summary, "first");
+    }
+
+    // ---- audit hash chain (v0.3.2) --------------------------------
+
+    #[test]
+    fn chain_verifies_fresh_records() {
+        let store = Store::open_in_memory().unwrap();
+        let mut first = Event::new(100, EventKind::DeviceDiscovered, "new device");
+        first.src_ip = Some("10.0.1.11".parse().unwrap());
+        store.record_event(&first).unwrap();
+        store
+            .record_event(&Event::new(101, EventKind::PacketObserved, "poll"))
+            .unwrap();
+        store
+            .record_event(&Event::new(102, EventKind::OperatorAction, "Ignored actor 10.0.9.77"))
+            .unwrap();
+        let check = store.verify_chain().unwrap();
+        assert!(check.ok, "fresh chain must verify: {:?}", check.break_reason);
+        assert_eq!(check.total_records, 3);
+        assert_eq!(check.chained_records, 3);
+        assert_eq!(check.pre_chain_records, 0);
+        let head = check.head.expect("a chained store has a head");
+        assert_eq!(head.len(), 64);
+        assert!(head.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn chain_detects_an_edited_record() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .record_event(&Event::new(100, EventKind::PacketObserved, "one"))
+            .unwrap();
+        let target = store
+            .record_event(&Event::new(101, EventKind::AlertRaised, "an alert"))
+            .unwrap();
+        store
+            .record_event(&Event::new(102, EventKind::PacketObserved, "three"))
+            .unwrap();
+        // Forge history the way an attacker with the file would.
+        store
+            .conn
+            .execute("UPDATE events SET summary = 'nothing happened' WHERE id = ?1", params![target])
+            .unwrap();
+        let check = store.verify_chain().unwrap();
+        assert!(!check.ok);
+        assert_eq!(check.break_id, Some(target));
+        assert!(check.break_reason.unwrap().contains("altered"));
+    }
+
+    #[test]
+    fn chain_detects_a_deleted_record() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .record_event(&Event::new(100, EventKind::PacketObserved, "one"))
+            .unwrap();
+        let middle = store
+            .record_event(&Event::new(101, EventKind::PacketObserved, "two"))
+            .unwrap();
+        let last = store
+            .record_event(&Event::new(102, EventKind::PacketObserved, "three"))
+            .unwrap();
+        store
+            .conn
+            .execute("DELETE FROM events WHERE id = ?1", params![middle])
+            .unwrap();
+        let check = store.verify_chain().unwrap();
+        assert!(!check.ok);
+        assert_eq!(check.break_id, Some(last));
+        assert!(check.break_reason.unwrap().contains("deleted"));
+    }
+
+    #[test]
+    fn chain_counts_pre_chain_rows_honestly() {
+        let store = Store::open_in_memory().unwrap();
+        // A row written before the chain existed (no fingerprints).
+        store
+            .conn
+            .execute(
+                "INSERT INTO events (timestamp, kind, summary) VALUES (50, 'packet_observed', 'legacy')",
+                [],
+            )
+            .unwrap();
+        store
+            .record_event(&Event::new(100, EventKind::PacketObserved, "one"))
+            .unwrap();
+        store
+            .record_event(&Event::new(101, EventKind::PacketObserved, "two"))
+            .unwrap();
+        let check = store.verify_chain().unwrap();
+        assert!(check.ok, "legacy rows before the chain are fine: {:?}", check.break_reason);
+        assert_eq!(check.pre_chain_records, 1);
+        assert_eq!(check.chained_records, 2);
+        // The first chained record must open at the genesis marker.
+        let prev: String = store
+            .conn
+            .query_row(
+                "SELECT prev_hash FROM events WHERE hash IS NOT NULL ORDER BY id ASC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(prev, CHAIN_GENESIS);
+    }
+
+    #[test]
+    fn chain_restarts_after_clear() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .record_event(&Event::new(100, EventKind::PacketObserved, "one"))
+            .unwrap();
+        store.clear_all().unwrap();
+        store
+            .record_event(&Event::new(200, EventKind::OperatorAction, "Stored data cleared"))
+            .unwrap();
+        let check = store.verify_chain().unwrap();
+        assert!(check.ok);
+        assert_eq!(check.total_records, 1);
+        assert_eq!(check.chained_records, 1);
+    }
+
+    #[test]
+    fn schema_migration_adds_chain_columns() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .record_event(&Event::new(100, EventKind::PacketObserved, "before"))
+            .unwrap();
+        // Simulate a pre-chain database: drop the columns, re-open.
+        store
+            .conn
+            .execute_batch("ALTER TABLE events DROP COLUMN prev_hash; ALTER TABLE events DROP COLUMN hash;")
+            .unwrap();
+        store.init_schema().unwrap();
+        store
+            .record_event(&Event::new(101, EventKind::PacketObserved, "after"))
+            .unwrap();
+        let check = store.verify_chain().unwrap();
+        assert!(check.ok, "migrated store must verify: {:?}", check.break_reason);
+        assert_eq!(check.pre_chain_records, 1);
+        assert_eq!(check.chained_records, 1);
     }
 }

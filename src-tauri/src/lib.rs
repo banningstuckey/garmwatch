@@ -2213,7 +2213,10 @@ fn audit_report(app: tauri::AppHandle, state: tauri::State<AppState>, days: u32)
         .events_since(from_s, 100_000)
         .map_err(|e| format!("could not read the trail: {e}"))?;
     let quarantined = store.quarantined().unwrap_or_default();
-    let report = garmwatch_core::evidence::build_report(&events, &quarantined, from_s, now_s);
+    let chain = store.verify_chain().unwrap_or_else(|e| {
+        garmwatch_core::store::ChainVerification::unavailable(format!("{e}"))
+    });
+    let report = garmwatch_core::evidence::build_report(&events, &quarantined, from_s, now_s, &chain);
     Ok(garmwatch_core::evidence::render_html(&report, &os_user()))
 }
 
@@ -2248,7 +2251,10 @@ fn save_audit_report(
             .events_since(from_s, 100_000)
             .map_err(|e| format!("could not read the trail: {e}"))?;
         let quarantined = store.quarantined().unwrap_or_default();
-        let report = garmwatch_core::evidence::build_report(&events, &quarantined, from_s, now_s);
+        let chain = store.verify_chain().unwrap_or_else(|e| {
+            garmwatch_core::store::ChainVerification::unavailable(format!("{e}"))
+        });
+        let report = garmwatch_core::evidence::build_report(&events, &quarantined, from_s, now_s, &chain);
         garmwatch_core::evidence::render_html(&report, &os_user())
     };
     let doc = format!(

@@ -49,6 +49,7 @@ pub mod placement;
 pub mod profile;
 pub mod sample;
 pub mod scenarios;
+pub mod sha256;
 pub mod sim;
 pub mod source;
 pub mod store;

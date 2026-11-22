@@ -16,6 +16,7 @@
 //! history that lives somewhere the sensor doesn't.
 
 use crate::model::{Event, EventKind};
+use crate::store::ChainVerification;
 use crate::suspicion;
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -58,6 +59,10 @@ pub struct EvidenceReport {
     pub vouches: Vec<VouchFinding>,
     /// Actors currently held in quarantine: (ip, by, at).
     pub held: Vec<(IpAddr, String, i64)>,
+    /// The audit chain's state over the WHOLE stored log (not
+    /// just this window) at generation time — the integrity
+    /// statement the rest of the report stands on.
+    pub chain: ChainVerification,
 }
 
 /// Builds the report from events at or after `window_start_s`
@@ -68,6 +73,7 @@ pub fn build_report(
     quarantined: &HashMap<IpAddr, (String, i64)>,
     window_start_s: i64,
     generated_at_s: i64,
+    chain: &ChainVerification,
 ) -> EvidenceReport {
     let mut sorted: Vec<&Event> = events.iter().filter(|e| e.timestamp >= window_start_s).collect();
     sorted.sort_by_key(|e| (e.timestamp, e.id.unwrap_or(0)));
@@ -83,6 +89,7 @@ pub fn build_report(
         alerts: Vec::new(),
         vouches: Vec::new(),
         held: Vec::new(),
+        chain: chain.clone(),
     };
     for event in &sorted {
         match event.kind {
@@ -193,6 +200,59 @@ pub fn render_html(report: &EvidenceReport, generated_by: &str) -> String {
         report.canary_touches,
         report.new_device_count,
     ));
+    out.push_str("<h3>Record integrity</h3>");
+    let chain = &report.chain;
+    if !chain.ok {
+        let reason = escape(chain.break_reason.as_deref().unwrap_or("verification failed"));
+        if let Some(id) = chain.break_id {
+            out.push_str(&format!(
+                "<p class=\"ev-flag\">CHAIN BROKEN at record #{id} — {reason}.</p>\
+                 <p>{} record(s) before it verified clean. Everything from that record \
+                 onward must be treated as unproven until the stored log is examined — \
+                 a broken chain is itself an incident.</p>",
+                chain.chained_records
+            ));
+        } else {
+            out.push_str(&format!(
+                "<p class=\"ev-flag\">Record integrity could not be verified — {reason}.</p>"
+            ));
+        }
+    } else if chain.chained_records == 0 {
+        out.push_str(
+            "<p>No chained records yet — the tamper-evident chain starts with the first \
+             record written by a chain-aware version.</p>",
+        );
+        if chain.pre_chain_records > 0 {
+            out.push_str(&format!(
+                "<p class=\"ev-meta\">{} stored record(s) predate the chain and are not \
+                 covered by any verification.</p>",
+                chain.pre_chain_records
+            ));
+        }
+    } else {
+        out.push_str(&format!(
+            "<p>Chain intact — {} record(s) verified: every record's fingerprint matches \
+             its content and its predecessor, so nothing chained has been altered, \
+             deleted, or reordered since it was written.</p>",
+            chain.chained_records
+        ));
+        if let Some(head) = &chain.head {
+            out.push_str(&format!(
+                "<p>Current chain head: <code>{}</code></p>\
+                 <p class=\"ev-meta\">File this report: a later report whose verification \
+                 covers these records proves none of them changed in between. This \
+                 fingerprint is the anchor.</p>",
+                escape(head)
+            ));
+        }
+        if chain.pre_chain_records > 0 {
+            out.push_str(&format!(
+                "<p class=\"ev-meta\">{} older record(s) predate the chain and are not \
+                 covered by this verification.</p>",
+                chain.pre_chain_records
+            ));
+        }
+    }
     out.push_str("<h3>Held in quarantine now</h3>");
     if report.held.is_empty() {
         out.push_str("<p>No actor is currently held.</p>");
@@ -319,7 +379,7 @@ mod tests {
         ];
         let mut held = HashMap::new();
         held.insert(rogue, ("banning".to_string(), 5_000));
-        let report = build_report(&events, &held, 0, 6_000);
+        let report = build_report(&events, &held, 0, 6_000, &ChainVerification::empty());
         assert_eq!(report.event_count, 5);
         assert_eq!(report.alert_count, 2);
         assert_eq!(report.operator_action_count, 2);
@@ -340,9 +400,35 @@ mod tests {
     #[test]
     fn html_escapes_summaries() {
         let events = vec![event(10, EventKind::OperatorAction, "User <script>alert(1)</script> did a thing", None)];
-        let report = build_report(&events, &HashMap::new(), 0, 20);
+        let report = build_report(&events, &HashMap::new(), 0, 20, &ChainVerification::empty());
         let html = render_html(&report, "tester");
         assert!(!html.contains("<script>alert(1)</script>"));
         assert!(html.contains("&lt;script&gt;"));
+    }
+
+    #[test]
+    fn integrity_section_reports_chain_state() {
+        let events = vec![event(10, EventKind::PacketObserved, "poll", None)];
+        // Intact chain: the head fingerprint is the filed anchor.
+        let mut chain = ChainVerification::empty();
+        chain.total_records = 4;
+        chain.chained_records = 3;
+        chain.pre_chain_records = 1;
+        chain.head = Some("ab12cd".repeat(10) + "ab12");
+        let report = build_report(&events, &HashMap::new(), 0, 20, &chain);
+        let html = render_html(&report, "tester");
+        assert!(html.contains("Chain intact"));
+        assert!(html.contains("Current chain head"));
+        assert!(html.contains("predate the chain"));
+        // Broken chain: flagged, with the record it broke at.
+        let mut broken = ChainVerification::empty();
+        broken.ok = false;
+        broken.break_id = Some(7);
+        broken.break_reason = Some("the record was altered".to_string());
+        broken.chained_records = 6;
+        let report = build_report(&events, &HashMap::new(), 0, 20, &broken);
+        let html = render_html(&report, "tester");
+        assert!(html.contains("CHAIN BROKEN at record #7"));
+        assert!(html.contains("6 record(s) before it verified clean"));
     }
 }

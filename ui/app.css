@@ -2,13 +2,19 @@
    the GarmWatch Industrial theme (vendor/nmui/css/) — this file only
    places things. */
 
-:root { color-scheme: dark; }
+:root {
+  color-scheme: dark;
+}
 :root[theme="paper-white"],
 :root[theme="daylight-steel"],
 :root[theme="warm-light"],
-:root[theme="contrast-paper"] { color-scheme: light; }
+:root[theme="contrast-paper"] {
+  color-scheme: light;
+}
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 /* This is an app console, not a document: dragging across the map,
    rail, or cards must never start a text selection. The exceptions
@@ -23,9 +29,12 @@ body {
   -webkit-user-select: none;
   user-select: none;
 }
-.event-log, .event-log *,
-#detail-body, #detail-body *,
-code, pre {
+.event-log,
+.event-log *,
+#detail-body,
+#detail-body *,
+code,
+pre {
   -webkit-user-select: text;
   user-select: text;
 }
@@ -34,10 +43,18 @@ body {
   margin: 0;
   background: var(--md-sys-color-surface);
   color: var(--md-sys-color-on-surface);
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
 }
 
-.shell { display: flex; min-height: 100vh; align-items: stretch; }
+.shell {
+  display: flex;
+  min-height: 100vh;
+  align-items: stretch;
+}
 
 /* Splash: full-window logo on the logo's own near-black, fading out
    once the app is up. */
@@ -54,8 +71,15 @@ body {
   cursor: pointer;
   transition: opacity 0.5s ease;
 }
-#splash.done { opacity: 0; pointer-events: none; }
-#splash-logo { width: min(560px, 74vw); height: auto; display: block; }
+#splash.done {
+  opacity: 0;
+  pointer-events: none;
+}
+#splash-logo {
+  width: min(560px, 74vw);
+  height: auto;
+  display: block;
+}
 .splash-sub {
   margin: 0;
   color: #9db4c0;
@@ -83,62 +107,153 @@ main {
    stack — the map takes the large share, detail/status sit beside it;
    Rules pairs its two layer cards; Events pairs its feed cards. */
 /* Overview strip + log filters */
-.overview-card { grid-column: 1 / -1; }
-.overview-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.stat { display: grid; gap: 2px; }
-.stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--md-sys-color-on-surface-variant); }
-.stat b { font-size: 26px; font-weight: 650; }
-.ov-ok { color: var(--md-sys-color-primary); }
-.ov-warn { color: var(--md-sys-color-tertiary); }
-.ov-bad { color: var(--md-sys-color-error); }
-.filter-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 8px; }
+.overview-card {
+  grid-column: 1 / -1;
+}
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.stat {
+  display: grid;
+  gap: 2px;
+}
+.stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.stat b {
+  font-size: 26px;
+  font-weight: 650;
+}
+.ov-ok {
+  color: var(--md-sys-color-primary);
+}
+.ov-warn {
+  color: var(--md-sys-color-tertiary);
+}
+.ov-bad {
+  color: var(--md-sys-color-error);
+}
+.filter-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 0 8px;
+}
 /* The flex display above beats the browser's built-in [hidden] rule,
    so a hidden filter row stayed on screen anyway (the device-filter
    chip never visually cleared). Same pattern as .view[hidden] below. */
-.filter-row[hidden] { display: none; }
+.filter-row[hidden] {
+  display: none;
+}
 
 /* Log query bar: one search field (an nmui-text-field with the
    magnifier as its trailing button) plus an AI switch beside it.
    The [hidden] overrides matter — display:flex/grid beat the
    browser's built-in [hidden] rule (the device-filter chip taught
    us that). */
-.query-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 4px 0 8px; }
-.query-input-wrap { position: relative; flex: 1 1 320px; min-width: 240px; display: flex; }
-.query-input-wrap > nmui-text-field { flex: 1; min-width: 0; }
-.query-input { width: 100%; }
+.query-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 4px 0 8px;
+}
+.query-input-wrap {
+  position: relative;
+  flex: 1 1 320px;
+  min-width: 240px;
+  display: flex;
+}
+.query-input-wrap > nmui-text-field {
+  flex: 1;
+  min-width: 0;
+}
+.query-input {
+  width: 100%;
+}
 /* The search input lives inside the text-field now: the field draws
    the box, so the input's own box must go — the .text-input class
    would otherwise beat the component's input reset. */
 nmui-text-field .text-input {
-  background: transparent; border: 0; border-radius: 0; padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
 }
-nmui-text-field .text-input:focus { outline: none; }
+nmui-text-field .text-input:focus {
+  outline: none;
+}
 /* Magnifier inside the search field (the text-field's trailing
    button): an icon button, no box of its own. */
 #query-search {
-  background: none; border: 0; padding: 8px; border-radius: 999px; cursor: pointer;
-  display: inline-flex; align-items: center; justify-content: center;
+  background: none;
+  border: 0;
+  padding: 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--md-sys-color-on-surface-variant);
 }
-#query-search:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent); }
-#query-search:disabled { opacity: 0.38; cursor: default; }
-#query-search svg { width: 24px; height: 24px; display: block; }
+#query-search:hover {
+  background: color-mix(
+    in srgb,
+    var(--md-sys-color-on-surface) 8%,
+    transparent
+  );
+}
+#query-search:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+#query-search svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
 .query-suggest {
-  position: absolute; top: 100%; left: 0; right: 0; z-index: 10;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 10;
   background: var(--md-sys-color-surface-container-high);
-  border: 1px solid var(--md-sys-color-outline-variant); border-radius: 10px;
-  margin-top: 4px; max-height: 240px; overflow: auto;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 10px;
+  margin-top: 4px;
+  max-height: 240px;
+  overflow: auto;
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
 }
-.query-suggest[hidden] { display: none; }
+.query-suggest[hidden] {
+  display: none;
+}
 .query-suggest button {
-  display: block; width: 100%; text-align: left; background: none; border: 0;
-  padding: 8px 12px; font: inherit; font-size: 13px;
-  color: var(--md-sys-color-on-surface); cursor: pointer;
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface);
+  cursor: pointer;
 }
 .query-suggest button[aria-selected="true"],
-.query-suggest button:hover { background: var(--md-sys-color-surface-container); }
-.query-suggest .q-hint { color: var(--md-sys-color-on-surface-variant); margin-left: 8px; }
+.query-suggest button:hover {
+  background: var(--md-sys-color-surface-container);
+}
+.query-suggest .q-hint {
+  color: var(--md-sys-color-on-surface-variant);
+  margin-left: 8px;
+}
 
 /* Menu check marks: nmui-menu marks the selected item with
    <icon class="check">check</icon> — a Material Symbols ligature.
@@ -159,7 +274,11 @@ nmui-menu > section > button > icon.check::before {
   color: var(--md-sys-color-on-surface-variant, #49454f);
 }
 .chip-btn {
-  font: inherit; font-size: 12.5px; padding: 6px 14px; border-radius: 999px; cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
   color: var(--md-sys-color-on-surface-variant);
   background: var(--md-sys-color-surface-container-high);
   border: 1px solid var(--md-sys-color-outline-variant);
@@ -174,74 +293,205 @@ nmui-menu > section > button > icon.check::before {
    widgets carry column spans, so order and layout never change with
    window width (the old fullscreen composition pinned the map to a
    row span and scrambled the order). Narrow windows stack full-width. */
-#view-live { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+#view-live {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
 @media (max-width: 900px) {
-  #view-live [data-widget] { grid-column: 1 / -1 !important; }
+  #view-live [data-widget] {
+    grid-column: 1 / -1 !important;
+  }
 }
 /* Resize handles: all four corners + all four sides (customize mode).
    Deliberately invisible — no icons. The transparent grab zones only
    change the cursor when the pointer is close enough to an edge or
    corner, the way mainstream dashboard builders do it. */
-.rz { position: absolute; z-index: 7; touch-action: none; }
-.rz-n { top: -11px; left: 26px; right: 26px; height: 22px; cursor: ns-resize; }
-.rz-s { bottom: -11px; left: 26px; right: 26px; height: 22px; cursor: ns-resize; }
-.rz-e { right: -11px; top: 26px; bottom: 26px; width: 22px; cursor: ew-resize; }
-.rz-w { left: -11px; top: 26px; bottom: 26px; width: 22px; cursor: ew-resize; }
-.rz-ne, .rz-nw, .rz-se, .rz-sw { width: 24px; height: 24px; }
-.rz-ne { top: -11px; right: -11px; cursor: nesw-resize; }
-.rz-nw { top: -11px; left: -11px; cursor: nwse-resize; }
-.rz-se { bottom: -11px; right: -11px; cursor: nwse-resize; }
-.rz-sw { bottom: -11px; left: -11px; cursor: nesw-resize; }
-#view-live .card-title { cursor: grab; }
+.rz {
+  position: absolute;
+  z-index: 7;
+  touch-action: none;
+}
+.rz-n {
+  top: -11px;
+  left: 26px;
+  right: 26px;
+  height: 22px;
+  cursor: ns-resize;
+}
+.rz-s {
+  bottom: -11px;
+  left: 26px;
+  right: 26px;
+  height: 22px;
+  cursor: ns-resize;
+}
+.rz-e {
+  right: -11px;
+  top: 26px;
+  bottom: 26px;
+  width: 22px;
+  cursor: ew-resize;
+}
+.rz-w {
+  left: -11px;
+  top: 26px;
+  bottom: 26px;
+  width: 22px;
+  cursor: ew-resize;
+}
+.rz-ne,
+.rz-nw,
+.rz-se,
+.rz-sw {
+  width: 24px;
+  height: 24px;
+}
+.rz-ne {
+  top: -11px;
+  right: -11px;
+  cursor: nesw-resize;
+}
+.rz-nw {
+  top: -11px;
+  left: -11px;
+  cursor: nwse-resize;
+}
+.rz-se {
+  bottom: -11px;
+  right: -11px;
+  cursor: nwse-resize;
+}
+.rz-sw {
+  bottom: -11px;
+  left: -11px;
+  cursor: nesw-resize;
+}
+#view-live .card-title {
+  cursor: grab;
+}
 
 @media (min-width: 1500px) {
-  #view-rules { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  #view-rules .scenarios-card { grid-column: 1 / -1; }
+  #view-rules {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  #view-rules .scenarios-card {
+    grid-column: 1 / -1;
+  }
 }
 @media (min-width: 1200px) {
-  #view-events { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  #view-events .log-card { grid-column: 1 / -1; }
+  #view-events {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  #view-events .log-card {
+    grid-column: 1 / -1;
+  }
 }
 
-.page-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.page-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
 
 /* Alert bell: the one place alerts are always visible, whatever view
    you're on. The badge counts alerts you haven't looked at yet;
    opening the panel marks them seen. The icon is inline SVG —
    GarmWatch ships no icon font, so no ligature text can leak. */
-.alert-bell-wrap { position: relative; margin-left: auto; }
+.alert-bell-wrap {
+  position: relative;
+  margin-left: auto;
+}
 .alert-bell {
-  position: relative; display: inline-flex; align-items: center; justify-content: center;
-  width: 40px; height: 40px; padding: 0; border: 0; border-radius: 999px;
-  background: none; color: var(--md-sys-color-on-surface-variant); cursor: pointer;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
 }
-.alert-bell:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent); }
-.alert-bell.has-unseen { color: var(--md-sys-color-error, #b3261e); }
+.alert-bell:hover {
+  background: color-mix(
+    in srgb,
+    var(--md-sys-color-on-surface) 8%,
+    transparent
+  );
+}
+.alert-bell.has-unseen {
+  color: var(--md-sys-color-error, #b3261e);
+}
 .alert-badge {
-  position: absolute; top: 2px; right: 0; min-width: 18px; height: 18px;
-  padding: 0 5px; box-sizing: border-box; border-radius: 999px;
-  background: var(--md-sys-color-error, #b3261e); color: #fff;
-  font-size: 11px; line-height: 18px; font-weight: 700; text-align: center;
+  position: absolute;
+  top: 2px;
+  right: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: var(--md-sys-color-error, #b3261e);
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  font-weight: 700;
+  text-align: center;
 }
-.alert-badge[hidden] { display: none; }
+.alert-badge[hidden] {
+  display: none;
+}
 .alert-panel {
-  position: absolute; right: 0; top: calc(100% + 8px); z-index: 30;
-  width: min(360px, 90vw); max-height: 420px; overflow: auto;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 30;
+  width: min(360px, 90vw);
+  max-height: 420px;
+  overflow: auto;
   background: var(--md-sys-color-surface-container-high);
-  border: 1px solid var(--md-sys-color-outline-variant); border-radius: 12px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35); padding: 12px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+  padding: 12px;
 }
-.alert-panel-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.alert-panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
 .alert-item {
-  display: flex; gap: 10px; width: 100%; text-align: left;
-  background: none; border: 0; border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  padding: 8px 4px; font: inherit; font-size: 13px; cursor: pointer;
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  padding: 8px 4px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
   color: var(--md-sys-color-on-surface);
 }
-.alert-item:hover { background: var(--md-sys-color-surface-container); }
-.alert-item-time { flex: 0 0 auto; color: var(--md-sys-color-on-surface-variant); font-variant-numeric: tabular-nums; }
-.alert-item-summary { min-width: 0; }
-.alert-view-all { margin-top: 10px; }
+.alert-item:hover {
+  background: var(--md-sys-color-surface-container);
+}
+.alert-item-time {
+  flex: 0 0 auto;
+  color: var(--md-sys-color-on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+.alert-item-summary {
+  min-width: 0;
+}
+.alert-view-all {
+  margin-top: 10px;
+}
 
 /* Rail collapse: the toggle sits at the top of the rail header — a
    hamburger (menu_open expanded, plain menu collapsed), drawn as
@@ -249,32 +499,68 @@ nmui-menu > section > button > icon.check::before {
    in the pill, label centered below it; the brand keeps only its
    mark. Destination icons are inline SVG too (no icon font ships). */
 .rail-toggle {
-  background: none; border: 0; width: 40px; height: 40px; padding: 8px;
-  border-radius: 999px; cursor: pointer; display: inline-flex;
-  align-items: center; justify-content: center;
+  background: none;
+  border: 0;
+  width: 40px;
+  height: 40px;
+  padding: 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--md-sys-color-on-surface-variant);
 }
-.rail-toggle:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent); }
-.rail-toggle svg { width: 24px; height: 24px; display: block; }
+.rail-toggle:hover {
+  background: color-mix(
+    in srgb,
+    var(--md-sys-color-on-surface) 8%,
+    transparent
+  );
+}
+.rail-toggle svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
 /* Expanded shows the arrow hamburger (menu_open), collapsed the plain
    one (menu) — the same pairing as nativemui.com, drawn locally. */
-nmui-navigation[rail][expanded] .rail-ic-closed { display: none; }
-nmui-navigation[rail][collapsed] .rail-ic-open { display: none; }
-nmui-navigation[rail][collapsed] .rail-logo,
-nmui-navigation[rail][collapsed] .rail-wordmark-text { display: none; }
-nmui-navigation[rail][collapsed] .rail-brand-row { justify-content: center; }
-nmui-navigation[rail][collapsed] .rail-mark { display: block; margin-left: 0; width: 44px; height: 44px; }
+nmui-navigation[rail][expanded] .rail-ic-closed {
+  display: none;
+}
+nmui-navigation[rail][collapsed] .rail-ic-open {
+  display: none;
+}
+nmui-navigation[rail][collapsed] .rail-logo {
+  display: none;
+}
+nmui-navigation[rail][collapsed] .rail-brand-row {
+  justify-content: center;
+}
+nmui-navigation[rail][collapsed] .rail-mark {
+  display: block;
+  margin-left: 0;
+  width: 44px;
+  height: 44px;
+}
 /* With icons, nmui's own collapsed pill governs: the 56x32 ::before
    takes the hover tint / selected container color, and the anchor
    stays 64px tall (icon in the pill, label below it). The old
    text-only overrides that hid the pill and painted the anchor are
    gone. */
-nmui-navigation[rail][collapsed] > destinations :is(a, button) > indicator > icon { display: inline-flex; }
+nmui-navigation[rail][collapsed]
+  > destinations
+  :is(a, button)
+  > indicator
+  > icon {
+  display: inline-flex;
+}
 nmui-navigation[rail][collapsed] > destinations :is(a, button) > indicator svg,
 nmui-navigation[rail][expanded] > destinations :is(a, button) > indicator svg {
-  width: 24px; height: 24px; display: block;
+  width: 24px;
+  height: 24px;
+  display: block;
 }
-
 
 .phase-tag {
   color: var(--md-sys-color-tertiary);
@@ -291,75 +577,130 @@ nmui-navigation[rail][expanded] > destinations :is(a, button) > indicator svg {
   color: var(--md-sys-color-on-surface-variant);
 }
 
-main p { margin: 6px 0; line-height: 1.5; }
+main p {
+  margin: 6px 0;
+  line-height: 1.5;
+}
 
-#engine-status { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; }
-#engine-status .ok { color: var(--md-sys-color-primary); }
-#engine-status .err { color: var(--md-sys-color-error); }
+#engine-status {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+}
+#engine-status .ok {
+  color: var(--md-sys-color-primary);
+}
+#engine-status .err {
+  color: var(--md-sys-color-error);
+}
 
-.dim { color: var(--md-sys-color-on-surface-variant); font-size: 13px; }
+.dim {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 13px;
+}
 
-ol.levels { margin: 6px 0; padding-left: 22px; line-height: 1.9; }
-ol.levels li span { color: var(--md-sys-color-on-surface-variant); }
+ol.levels {
+  margin: 6px 0;
+  padding-left: 22px;
+  line-height: 1.9;
+}
+ol.levels li span {
+  color: var(--md-sys-color-on-surface-variant);
+}
 
-.card-actions { margin-top: 12px; }
-.clear-confirm { margin-top: 12px; }
-.clear-confirm-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
-.clear-confirm-row .text-input { width: 160px; }
+.card-actions {
+  margin-top: 12px;
+}
+.clear-confirm {
+  margin-top: 12px;
+}
+.clear-confirm-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.clear-confirm-row .text-input {
+  width: 160px;
+}
 /* Settings exposed-dropdown fields: the field spans the row, the
    menu is a fixed popup and takes no flex space. */
-.setting-row .menu-field { min-width: 300px; flex: 1 1 420px; max-width: 560px; }
-.card-actions .menu-field.compact { min-width: 220px; flex: 0 1 300px; }
-.setting-row .menu-field [trailing] { font-size: 18px; color: var(--md-sys-color-on-surface-variant); }
+.setting-row .menu-field {
+  min-width: 300px;
+  flex: 1 1 420px;
+  max-width: 560px;
+}
+.card-actions .menu-field.compact {
+  min-width: 220px;
+  flex: 0 1 300px;
+}
+.setting-row .menu-field [trailing] {
+  font-size: 18px;
+  color: var(--md-sys-color-on-surface-variant);
+}
 
-.rail-brand-row { display: flex; align-items: center; gap: 4px; }
+.rail-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 /* Menu branding (Banning, 2026-11-20): expanded menu shows the
    full GarmWatch lockup; a collapsed menu shows only the wolf
    mark. Light themes use mark + live text instead of the lockup —
    its silver lettering washes out on a light rail. The mark ships
    on a transparent ground; object-fit crops its wide canvas down
    to the wolf itself at this small size. */
-.rail-logo { width: 216px; max-width: 100%; height: auto; display: block; margin-left: 4px; }
-.rail-mark { width: 34px; height: 34px; display: none; margin-left: 8px; object-fit: cover; }
-/* Light themes: the wordmark art's silver lettering washes out on
-   a light rail, so light themes swap it for a live-text wordmark
-   in the theme's own colors (same two-tone split as the art: GARM
-   in the text color, WATCH in red). The transparent wolf mark
-   reads fine on light, so it stays on every theme. */
-.rail-wordmark-text { display: none; }
-:root[theme="paper-white"] .rail-logo,
-:root[theme="daylight-steel"] .rail-logo,
-:root[theme="warm-light"] .rail-logo,
-:root[theme="contrast-paper"] .rail-logo { display: none; }
-:root[theme="paper-white"] .rail-mark,
-:root[theme="daylight-steel"] .rail-mark,
-:root[theme="warm-light"] .rail-mark,
-:root[theme="contrast-paper"] .rail-mark { display: block; }
-:root[theme="paper-white"] .rail-wordmark-text,
-:root[theme="daylight-steel"] .rail-wordmark-text,
-:root[theme="warm-light"] .rail-wordmark-text,
-:root[theme="contrast-paper"] .rail-wordmark-text {
-  display: block; margin-left: 10px;
-  font-size: 19px; font-weight: 800; letter-spacing: 0.05em; line-height: 1;
+.rail-logo {
+  width: 216px;
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin-left: 4px;
 }
-.rail-wordmark-text .rw-dead { color: var(--md-sys-color-primary); }
-.rail-wordmark-text .rw-band { color: var(--md-sys-color-tertiary); }
+.rail-mark {
+  width: 34px;
+  height: 34px;
+  display: none;
+  margin-left: 8px;
+  object-fit: cover;
+}
 
-footer.note { color: var(--md-sys-color-on-surface-variant); font-size: 12px; }
+footer.note {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 12px;
+}
 
-.view { display: grid; gap: 16px; align-content: start; }
-.view[hidden] { display: none; }
+.view {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+.view[hidden] {
+  display: none;
+}
 
-.plant-list { margin: 8px 0 2px; padding-left: 20px; line-height: 1.9; }
+.plant-list {
+  margin: 8px 0 2px;
+  padding-left: 20px;
+  line-height: 1.9;
+}
 
-.sim-status { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.sim-status {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
 
 /* The blind-check warning: a running capture gone quiet. */
-#capture-quiet { color: var(--md-sys-color-error, #f87171); font-weight: 600; }
+#capture-quiet {
+  color: var(--md-sys-color-error, #f87171);
+  font-weight: 600;
+}
 /* Canary PLC card: the bind/port inputs sit in the controls row, and
    a touch reads like the capture-quiet warning — red, because a
    visitor to the canary is an intruder by definition. */
-.canary-bind { width: 130px; }
+.canary-bind {
+  width: 130px;
+}
 
 /* Suspicion: the per-actor score chip — green for a good actor,
    sliding through yellow and orange to red. Tinted backgrounds at
@@ -373,10 +714,26 @@ footer.note { color: var(--md-sys-color-on-surface-variant); font-size: 12px; }
   font-size: 0.85em;
   white-space: nowrap;
 }
-.susp-green { color: #22c55e; border-color: #22c55e88; background: #22c55e1a; }
-.susp-yellow { color: #eab308; border-color: #eab30888; background: #eab3081a; }
-.susp-orange { color: #f97316; border-color: #f9731688; background: #f973161a; }
-.susp-red { color: #ef4444; border-color: #ef444488; background: #ef44441a; }
+.susp-green {
+  color: #22c55e;
+  border-color: #22c55e88;
+  background: #22c55e1a;
+}
+.susp-yellow {
+  color: #eab308;
+  border-color: #eab30888;
+  background: #eab3081a;
+}
+.susp-orange {
+  color: #f97316;
+  border-color: #f9731688;
+  background: #f973161a;
+}
+.susp-red {
+  color: #ef4444;
+  border-color: #ef444488;
+  background: #ef44441a;
+}
 .quarantine-badge {
   display: inline-block;
   margin-left: 6px;
@@ -389,14 +746,37 @@ footer.note { color: var(--md-sys-color-on-surface-variant); font-size: 12px; }
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
-.actor-actions { margin-top: 8px; }
-#btn-evidence-save[hidden], #btn-evidence-clear[hidden] { display: none; }
-.events-group { grid-column: 1 / -1; margin-top: 12px; }
-.events-group-title { margin: 0 0 2px; font-size: 17px; }
-.events-group .dim { margin: 0; }
-.events-sub { grid-column: 1 / -1; margin: 4px 0 -8px; font-weight: 600; opacity: .75; }
-.triage-list { margin: 6px 0 6px 20px; padding: 0; }
-.triage-list li { margin: 5px 0; }
+.actor-actions {
+  margin-top: 8px;
+}
+#btn-evidence-save[hidden],
+#btn-evidence-clear[hidden] {
+  display: none;
+}
+.events-group {
+  grid-column: 1 / -1;
+  margin-top: 12px;
+}
+.events-group-title {
+  margin: 0 0 2px;
+  font-size: 17px;
+}
+.events-group .dim {
+  margin: 0;
+}
+.events-sub {
+  grid-column: 1 / -1;
+  margin: 4px 0 -8px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+.triage-list {
+  margin: 6px 0 6px 20px;
+  padding: 0;
+}
+.triage-list li {
+  margin: 5px 0;
+}
 .action-sheet {
   white-space: pre-wrap;
   font-size: 0.85em;
@@ -406,9 +786,16 @@ footer.note { color: var(--md-sys-color-on-surface-variant); font-size: 12px; }
   margin-top: 8px;
   user-select: text;
 }
-.canary-port { width: 84px; }
-#canary-touched { color: var(--md-sys-color-error, #f87171); font-weight: 600; }
-#canary-touched[hidden] { display: none; }
+.canary-port {
+  width: 84px;
+}
+#canary-touched {
+  color: var(--md-sys-color-error, #f87171);
+  font-weight: 600;
+}
+#canary-touched[hidden] {
+  display: none;
+}
 
 .event-log {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -428,102 +815,275 @@ footer.note { color: var(--md-sys-color-on-surface-variant); font-size: 12px; }
   border-bottom: 1px solid var(--md-sys-color-surface-container-high);
 }
 
-.log-time { color: var(--md-sys-color-on-surface-variant); flex: none; }
-.log-row.kind-modbus { border-left-color: var(--md-sys-color-primary); }
-.log-row.kind-write { border-left-color: var(--md-sys-color-tertiary); background: color-mix(in srgb, var(--md-sys-color-tertiary) 8%, transparent); }
-.log-row.kind-discovery, .log-row.kind-connection { border-left-color: var(--md-sys-color-secondary); }
-.log-row.kind-alert { border-left-color: var(--md-sys-color-error); }
-.log-row.kind-analyst { border-left-color: var(--md-sys-color-tertiary); }
+.log-time {
+  color: var(--md-sys-color-on-surface-variant);
+  flex: none;
+}
+.log-row.kind-modbus {
+  border-left-color: var(--md-sys-color-primary);
+}
+.log-row.kind-write {
+  border-left-color: var(--md-sys-color-tertiary);
+  background: color-mix(in srgb, var(--md-sys-color-tertiary) 8%, transparent);
+}
+.log-row.kind-discovery,
+.log-row.kind-connection {
+  border-left-color: var(--md-sys-color-secondary);
+}
+.log-row.kind-alert {
+  border-left-color: var(--md-sys-color-error);
+}
+.log-row.kind-analyst {
+  border-left-color: var(--md-sys-color-tertiary);
+}
 
 /* Analyst card */
 .analyst-output {
-  white-space: pre-wrap; line-height: 1.65; font-size: 13.5px;
-  border: 1px solid var(--md-sys-color-outline-variant); border-radius: 10px;
-  padding: 12px 14px; margin-top: 10px; user-select: text; -webkit-user-select: text;
+  white-space: pre-wrap;
+  line-height: 1.65;
+  font-size: 13.5px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-top: 10px;
+  user-select: text;
+  -webkit-user-select: text;
 }
-select.text-input { max-width: 240px; }
+select.text-input {
+  max-width: 240px;
+}
 
 /* Purdue map */
-.map-card { position: relative; }
-.map-scroll { overflow-x: auto; }
-#purdue-map { width: 100%; min-width: 700px; display: block; touch-action: none; cursor: grab; }
-#purdue-map.dragging { cursor: grabbing; }
+.map-card {
+  position: relative;
+}
+.map-scroll {
+  overflow-x: auto;
+}
+#purdue-map {
+  width: 100%;
+  min-width: 700px;
+  display: block;
+  touch-action: none;
+  cursor: grab;
+}
+#purdue-map.dragging {
+  cursor: grabbing;
+}
 /* Detail popover: the side detail panel lives in a dashboard widget,
    so boards without it showed nothing on click. This sits over the
    map itself, so detail is visible on any board. */
 .map-popover {
-  position: absolute; top: 12px; right: 12px; width: 340px; max-width: calc(100% - 24px);
-  max-height: 70%; overflow: auto; z-index: 5;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 340px;
+  max-width: calc(100% - 24px);
+  max-height: 70%;
+  overflow: auto;
+  z-index: 5;
   background: var(--md-sys-color-surface-container);
-  border: 1px solid var(--md-sys-color-outline-variant); border-radius: 12px;
-  padding: 12px 14px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
 }
-.map-popover-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.map-popover-body, #map-popover-body { user-select: text; -webkit-user-select: text; }
-#purdue-map .band { fill: var(--md-sys-color-surface-container-low); }
+.map-popover-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.map-popover-body,
+#map-popover-body {
+  user-select: text;
+  -webkit-user-select: text;
+}
+#purdue-map .band {
+  fill: var(--md-sys-color-surface-container-low);
+}
 #purdue-map .band-dmz {
-  fill: color-mix(in srgb, var(--md-sys-color-tertiary) 7%, var(--md-sys-color-surface-container-low));
+  fill: color-mix(
+    in srgb,
+    var(--md-sys-color-tertiary) 7%,
+    var(--md-sys-color-surface-container-low)
+  );
   stroke: var(--md-sys-color-tertiary);
   stroke-width: 1.2;
   stroke-dasharray: 7 5;
 }
-#purdue-map .band-unclass { fill: var(--md-sys-color-surface-container); }
-#purdue-map text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-#purdue-map .t-level { font-size: 15px; font-weight: 700; fill: var(--md-sys-color-on-surface); letter-spacing: 0.04em; }
-#purdue-map .t-name { font-size: 11.5px; fill: var(--md-sys-color-on-surface-variant); }
-#purdue-map .t-dmz { font-size: 10px; letter-spacing: 0.16em; fill: var(--md-sys-color-tertiary); }
-#purdue-map .t-zone { font-size: 11px; letter-spacing: 0.18em; fill: var(--md-sys-color-on-surface-variant); }
-#purdue-map .zone-bracket { stroke: var(--md-sys-color-outline); stroke-width: 1.4; fill: none; }
+#purdue-map .band-unclass {
+  fill: var(--md-sys-color-surface-container);
+}
+#purdue-map text {
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+}
+#purdue-map .t-level {
+  font-size: 15px;
+  font-weight: 700;
+  fill: var(--md-sys-color-on-surface);
+  letter-spacing: 0.04em;
+}
+#purdue-map .t-name {
+  font-size: 11.5px;
+  fill: var(--md-sys-color-on-surface-variant);
+}
+#purdue-map .t-dmz {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  fill: var(--md-sys-color-tertiary);
+}
+#purdue-map .t-zone {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  fill: var(--md-sys-color-on-surface-variant);
+}
+#purdue-map .zone-bracket {
+  stroke: var(--md-sys-color-outline);
+  stroke-width: 1.4;
+  fill: none;
+}
 #purdue-map .conduit {
   stroke: var(--md-sys-color-outline);
   opacity: 0.55;
   cursor: pointer;
 }
-#purdue-map .conduit:hover { opacity: 1; stroke: var(--md-sys-color-primary); }
-#purdue-map .conduit.pulse { animation: conduitPulse 0.8s ease-out; }
-#purdue-map .conduit.pulse-write { animation: conduitPulseWrite 0.8s ease-out; }
-#purdue-map .conduit.pulse-alert { animation: conduitPulseAlert 0.9s ease-out; }
-@keyframes conduitPulseAlert {
-  0% { stroke: var(--md-sys-color-error); opacity: 1; filter: drop-shadow(0 0 6px var(--md-sys-color-error)); }
-  100% { filter: none; }
+#purdue-map .conduit:hover {
+  opacity: 1;
+  stroke: var(--md-sys-color-primary);
 }
-#purdue-map .node.alert-flash rect { stroke: var(--md-sys-color-error); stroke-width: 2.5; }
+#purdue-map .conduit.pulse {
+  animation: conduitPulse 0.8s ease-out;
+}
+#purdue-map .conduit.pulse-write {
+  animation: conduitPulseWrite 0.8s ease-out;
+}
+#purdue-map .conduit.pulse-alert {
+  animation: conduitPulseAlert 0.9s ease-out;
+}
+@keyframes conduitPulseAlert {
+  0% {
+    stroke: var(--md-sys-color-error);
+    opacity: 1;
+    filter: drop-shadow(0 0 6px var(--md-sys-color-error));
+  }
+  100% {
+    filter: none;
+  }
+}
+#purdue-map .node.alert-flash rect {
+  stroke: var(--md-sys-color-error);
+  stroke-width: 2.5;
+}
 @keyframes conduitPulse {
-  0% { stroke: var(--md-sys-color-primary); opacity: 1; filter: drop-shadow(0 0 5px var(--md-sys-color-primary)); }
-  100% { filter: none; }
+  0% {
+    stroke: var(--md-sys-color-primary);
+    opacity: 1;
+    filter: drop-shadow(0 0 5px var(--md-sys-color-primary));
+  }
+  100% {
+    filter: none;
+  }
 }
 @keyframes conduitPulseWrite {
-  0% { stroke: var(--md-sys-color-tertiary); opacity: 1; filter: drop-shadow(0 0 5px var(--md-sys-color-tertiary)); }
-  100% { filter: none; }
+  0% {
+    stroke: var(--md-sys-color-tertiary);
+    opacity: 1;
+    filter: drop-shadow(0 0 5px var(--md-sys-color-tertiary));
+  }
+  100% {
+    filter: none;
+  }
 }
-#purdue-map .node { cursor: pointer; }
+#purdue-map .node {
+  cursor: pointer;
+}
 #purdue-map .node rect {
   fill: var(--md-sys-color-surface-container-high);
   stroke: var(--md-sys-color-outline-variant);
   stroke-width: 1;
 }
-#purdue-map .node:hover rect { stroke: var(--md-sys-color-primary); }
-#purdue-map .node.active rect { stroke: var(--md-sys-color-primary); stroke-width: 2.5; }
-#purdue-map .node text { pointer-events: none; }
-#purdue-map .n-label { font-size: 13px; font-weight: 600; fill: var(--md-sys-color-on-surface); }
-#purdue-map .n-sub { font-size: 10.5px; fill: var(--md-sys-color-on-surface-variant); }
-#purdue-map .node.compact .n-label { font-size: 11px; }
-#purdue-map .node.compact .n-sub { font-size: 9px; }
+#purdue-map .node:hover rect {
+  stroke: var(--md-sys-color-primary);
+}
+#purdue-map .node.active rect {
+  stroke: var(--md-sys-color-primary);
+  stroke-width: 2.5;
+}
+#purdue-map .node text {
+  pointer-events: none;
+}
+#purdue-map .n-label {
+  font-size: 13px;
+  font-weight: 600;
+  fill: var(--md-sys-color-on-surface);
+}
+#purdue-map .n-sub {
+  font-size: 10.5px;
+  fill: var(--md-sys-color-on-surface-variant);
+}
+#purdue-map .node.compact .n-label {
+  font-size: 11px;
+}
+#purdue-map .node.compact .n-sub {
+  font-size: 9px;
+}
 
-.detail-events { margin: 8px 0 2px; padding-left: 18px; line-height: 1.8; font-size: 13px; }
+.detail-events {
+  margin: 8px 0 2px;
+  padding-left: 18px;
+  line-height: 1.8;
+  font-size: 13px;
+}
 
 /* Rules view */
-.rules-list { margin: 8px 0; padding-left: 18px; line-height: 1.75; font-size: 13.5px; }
-.rules-list strong { color: var(--md-sys-color-on-surface); }
-.scenario-list { display: grid; gap: 14px; margin-top: 10px; }
-.scenario-row { display: grid; gap: 4px; justify-items: start; }
-.scenario-row p { margin: 0; }
+.rules-list {
+  margin: 8px 0;
+  padding-left: 18px;
+  line-height: 1.75;
+  font-size: 13.5px;
+}
+.rules-list strong {
+  color: var(--md-sys-color-on-surface);
+}
+.scenario-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 10px;
+}
+.scenario-row {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+.scenario-row p {
+  margin: 0;
+}
 
 /* Replay controls */
-.replay-controls { align-items: center; flex-wrap: wrap; }
-.replay-speed { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--md-sys-color-on-surface-variant); }
-.replay-file { display: flex; gap: 10px; margin-top: 12px; align-items: center; }
-.text-input, .replay-speed select {
+.replay-controls {
+  align-items: center;
+  flex-wrap: wrap;
+}
+.replay-speed {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.replay-file {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  align-items: center;
+}
+.text-input,
+.replay-speed select {
   background: var(--md-sys-color-surface-container);
   color: var(--md-sys-color-on-surface);
   border: 1px solid var(--md-sys-color-outline-variant);
@@ -532,11 +1092,24 @@ select.text-input { max-width: 240px; }
   font: inherit;
   font-size: 13px;
 }
-.text-input { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-.text-input:focus, .replay-speed select:focus { outline: 2px solid var(--md-sys-color-primary); outline-offset: 1px; }
+.text-input {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.text-input:focus,
+.replay-speed select:focus {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 1px;
+}
 
 /* Assets table */
-.assets-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+.assets-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 8px;
+}
 .assets-table th {
   text-align: left;
   font-size: 11px;
@@ -554,70 +1127,211 @@ select.text-input { max-width: 240px; }
 }
 
 /* Visualization layer: gauge, diff mode, storyboard, trajectory, heartbeats */
-.gauge-wrap { margin-top: 14px; }
-.gauge-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
-.gauge-track { position: relative; display: flex; height: 18px; border-radius: 9px; overflow: visible; margin-top: 6px; }
-.gauge-zone { height: 100%; }
-.gauge-band { width: 50%; background: color-mix(in srgb, var(--md-sys-color-primary) 45%, transparent); border-radius: 9px 0 0 9px; }
-.gauge-warn { width: 30%; background: color-mix(in srgb, var(--md-sys-color-tertiary) 55%, transparent); }
-.gauge-danger { width: 20%; background: color-mix(in srgb, var(--md-sys-color-error) 60%, transparent); border-radius: 0 9px 9px 0; }
-.gauge-needle { position: absolute; top: -5px; width: 3px; height: 28px; background: var(--md-sys-color-on-surface); border-radius: 2px; transition: left 0.6s ease; }
-.gauge-scale { display: flex; justify-content: space-between; font-size: 11px; color: var(--md-sys-color-on-surface-variant); margin-top: 4px; }
-.span-all { grid-column: 1 / -1; }
-#purdue-map .node-old { opacity: 0.22; }
-#purdue-map .node-new rect { stroke: var(--md-sys-color-tertiary); stroke-width: 2.5; stroke-dasharray: 7 4; }
-#purdue-map .conduit-old { opacity: 0.1; }
-#purdue-map .conduit-changed { stroke: var(--md-sys-color-tertiary); }
-.story-strip { display: flex; align-items: stretch; gap: 6px; overflow-x: auto; padding: 4px 0; }
-.frame { min-width: 190px; max-width: 240px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 10px; padding: 8px 10px; display: grid; gap: 4px; font-size: 12.5px; background: var(--md-sys-color-surface-container); }
-.frame-alert { border-color: var(--md-sys-color-error); }
-.frame-write { border-color: var(--md-sys-color-tertiary); }
-.frame-time { font-size: 11px; color: var(--md-sys-color-on-surface-variant); }
-.frame-arrow { align-self: center; color: var(--md-sys-color-on-surface-variant); }
-.heart-row { display: flex; align-items: center; gap: 14px; padding: 3px 0; flex-wrap: nowrap; }
-.heart-name { flex: 0 0 8.5em; min-width: 0; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.heart-chart { position: relative; flex: 1 1 auto; min-width: 0; }
-.heart-svg { width: 100%; height: 30px; display: block; }
+.gauge-wrap {
+  margin-top: 14px;
+}
+.gauge-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+.gauge-track {
+  position: relative;
+  display: flex;
+  height: 18px;
+  border-radius: 9px;
+  overflow: visible;
+  margin-top: 6px;
+}
+.gauge-zone {
+  height: 100%;
+}
+.gauge-band {
+  width: 50%;
+  background: color-mix(in srgb, var(--md-sys-color-primary) 45%, transparent);
+  border-radius: 9px 0 0 9px;
+}
+.gauge-warn {
+  width: 30%;
+  background: color-mix(in srgb, var(--md-sys-color-tertiary) 55%, transparent);
+}
+.gauge-danger {
+  width: 20%;
+  background: color-mix(in srgb, var(--md-sys-color-error) 60%, transparent);
+  border-radius: 0 9px 9px 0;
+}
+.gauge-needle {
+  position: absolute;
+  top: -5px;
+  width: 3px;
+  height: 28px;
+  background: var(--md-sys-color-on-surface);
+  border-radius: 2px;
+  transition: left 0.6s ease;
+}
+.gauge-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--md-sys-color-on-surface-variant);
+  margin-top: 4px;
+}
+.span-all {
+  grid-column: 1 / -1;
+}
+#purdue-map .node-old {
+  opacity: 0.22;
+}
+#purdue-map .node-new rect {
+  stroke: var(--md-sys-color-tertiary);
+  stroke-width: 2.5;
+  stroke-dasharray: 7 4;
+}
+#purdue-map .conduit-old {
+  opacity: 0.1;
+}
+#purdue-map .conduit-changed {
+  stroke: var(--md-sys-color-tertiary);
+}
+.story-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 4px 0;
+}
+.frame {
+  min-width: 190px;
+  max-width: 240px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 4px;
+  font-size: 12.5px;
+  background: var(--md-sys-color-surface-container);
+}
+.frame-alert {
+  border-color: var(--md-sys-color-error);
+}
+.frame-write {
+  border-color: var(--md-sys-color-tertiary);
+}
+.frame-time {
+  font-size: 11px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.frame-arrow {
+  align-self: center;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.heart-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 3px 0;
+  flex-wrap: nowrap;
+}
+.heart-name {
+  flex: 0 0 8.5em;
+  min-width: 0;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.heart-chart {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.heart-svg {
+  width: 100%;
+  height: 30px;
+  display: block;
+}
 /* Crosshair overlays are plain HTML, not SVG: the marker is a true
    circle at any aspect ratio (an SVG circle inside the stretched
    viewBox rendered as a tall oval) and the line is exactly vertical. */
 .heart-vline-html {
-  position: absolute; top: 0; bottom: 0; width: 0;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
   border-left: 1px dashed var(--md-sys-color-on-surface-variant);
-  opacity: 0.7; pointer-events: none;
+  opacity: 0.7;
+  pointer-events: none;
 }
 .heart-marker-html {
-  position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px;
-  border-radius: 50%; box-sizing: border-box;
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  box-sizing: border-box;
   background: var(--md-sys-color-surface);
   border: 2px solid var(--md-sys-color-primary);
   pointer-events: none;
 }
-.heart-svg polyline { fill: none; stroke: var(--md-sys-color-primary); stroke-width: 1.6; pointer-events: none; }
-.heart-wrote polyline { stroke: var(--md-sys-color-tertiary); }
-.heart-hit { fill: transparent; pointer-events: all; cursor: crosshair; }
-.heart-wrote .heart-marker-html { border-color: var(--md-sys-color-tertiary); }
+.heart-svg polyline {
+  fill: none;
+  stroke: var(--md-sys-color-primary);
+  stroke-width: 1.6;
+  pointer-events: none;
+}
+.heart-wrote polyline {
+  stroke: var(--md-sys-color-tertiary);
+}
+.heart-hit {
+  fill: transparent;
+  pointer-events: all;
+  cursor: crosshair;
+}
+.heart-wrote .heart-marker-html {
+  border-color: var(--md-sys-color-tertiary);
+}
 .heart-value {
   /* Fixed width: the longest readout ("290 events · 0 writes ·
      10:49:08–10:49:23") fits, so the text changing on hover can
      never resize this column and shove the chart sideways. */
-  flex: 0 0 300px; white-space: nowrap; overflow: hidden;
-  text-overflow: ellipsis; font-size: 12.5px;
+  flex: 0 0 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
   color: var(--md-sys-color-on-surface-variant);
   font-variant-numeric: tabular-nums;
 }
 .heart-readout {
-  margin-top: 8px; min-height: 1.35em; font-size: 12.5px;
+  margin-top: 8px;
+  min-height: 1.35em;
+  font-size: 12.5px;
   color: var(--md-sys-color-on-surface-variant);
   font-variant-numeric: tabular-nums;
 }
 
 /* Dashboards */
-.dash-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; order: 0; }
-.dash-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.dash-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  order: 0;
+}
+.dash-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
 .dash-tab {
-  font: inherit; font-size: 13px; padding: 7px 16px; border-radius: 999px; cursor: pointer;
-  display: inline-flex; align-items: center;
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
   color: var(--md-sys-color-on-surface-variant);
   background: var(--md-sys-color-surface-container-high);
   border: 1px solid var(--md-sys-color-outline-variant);
@@ -627,28 +1341,85 @@ select.text-input { max-width: 240px; }
   background: var(--md-sys-color-primary-container);
   border-color: transparent;
 }
-.dash-badge { width: 9px; height: 9px; border-radius: 50%; background: var(--md-sys-color-error); margin-left: 8px; }
-.dash-del { color: var(--md-sys-color-error); font-weight: 700; }
-.dash-palette { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; order: 1; }
-.dash-palette[hidden] { display: none; }
-#view-live nmui-card { position: relative; }
-#view-live nmui-card.customizing { outline: 1.5px dashed var(--md-sys-color-outline); outline-offset: -6px; cursor: grab; }
-#view-live nmui-card.dragging { opacity: 0.45; }
+.dash-badge {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--md-sys-color-error);
+  margin-left: 8px;
+}
+.dash-del {
+  color: var(--md-sys-color-error);
+  font-weight: 700;
+}
+.dash-palette {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  order: 1;
+}
+.dash-palette[hidden] {
+  display: none;
+}
+#view-live nmui-card {
+  position: relative;
+}
+#view-live nmui-card.customizing {
+  outline: 1.5px dashed var(--md-sys-color-outline);
+  outline-offset: -6px;
+  cursor: grab;
+}
+#view-live nmui-card.dragging {
+  opacity: 0.45;
+}
 .widget-tools {
-  position: absolute; top: 8px; right: 10px; z-index: 5;
-  display: flex; gap: 8px; align-items: center;
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 5;
+  display: flex;
+  gap: 8px;
+  align-items: center;
   background: var(--md-sys-color-surface-container-highest);
   border: 1px solid var(--md-sys-color-outline-variant);
-  padding: 3px 8px; border-radius: 8px; font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 12px;
 }
 
 /* Settings */
-.setting-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 7px 0; }
-.setting-row label { font-size: 14px; }
-.setting-row .text-input { min-width: 230px; }
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 7px 0;
+}
+.setting-row label {
+  font-size: 14px;
+}
+.setting-row .text-input {
+  min-width: 230px;
+}
 
 /* Dashboard tabs + widget chrome */
-#dash-tabs { flex: 1 1 auto; min-width: 220px; }
-.widget-grip { cursor: grab; touch-action: none; padding: 2px 6px; font-size: 15px; color: var(--md-sys-color-on-surface-variant); }
-.widget-grip:active { cursor: grabbing; }
-#view-live nmui-card.dragging { opacity: 0.5; outline: 2px solid var(--md-sys-color-primary); outline-offset: -2px; }
+#dash-tabs {
+  flex: 1 1 auto;
+  min-width: 220px;
+}
+.widget-grip {
+  cursor: grab;
+  touch-action: none;
+  padding: 2px 6px;
+  font-size: 15px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.widget-grip:active {
+  cursor: grabbing;
+}
+#view-live nmui-card.dragging {
+  opacity: 0.5;
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -2px;
+}
